@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台股選股工具</title>
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#232323; --muted:#6b6b6b;
+    --line:#dcd8d0; --accent:#2f5d50; --accent-soft:#e6efec;
+    --up:#c8342b; --down:#1a7a4c;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Noto Sans TC","微軟正黑體","Microsoft JhengHei",sans-serif;
+    font-size:15px; line-height:1.6;
+  }
+  .wrap{max-width:1400px; margin:0 auto; padding:24px 20px 64px}
+  header h1{font-size:22px; margin:0 0 4px}
+  header .meta{color:var(--muted); font-size:13px}
+  header .meta b{color:var(--ink); font-weight:600}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:8px;
+        padding:16px 18px; margin-top:16px}
+  .card h2{font-size:15px; margin:0 0 12px; letter-spacing:.04em; color:var(--accent)}
+
+  .presets{display:flex; flex-wrap:wrap; gap:8px}
+  button{
+    font-family:inherit; font-size:14px; cursor:pointer;
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+    border-radius:6px; padding:7px 14px;
+  }
+  button:hover{border-color:var(--accent); color:var(--accent)}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  button.primary:hover{opacity:.88; color:#fff}
+  button.active{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:600}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px 18px}
+  .field{display:flex; flex-direction:column; gap:4px}
+  .field label{font-size:13px; color:var(--muted)}
+  .field .pair{display:flex; align-items:center; gap:6px}
+  input[type=number],input[type=text]{
+    font-family:inherit; font-size:14px; width:100%; padding:6px 8px;
+    border:1px solid var(--line); border-radius:5px; background:#fff; color:var(--ink);
+  }
+  input:focus{outline:2px solid var(--accent-soft); border-color:var(--accent)}
+  .pair span{color:var(--muted); font-size:13px}
+  .checks{display:flex; gap:16px; align-items:center; flex-wrap:wrap; font-size:14px}
+  .checks label{display:flex; gap:5px; align-items:center; cursor:pointer}
+
+  .bar{display:flex; justify-content:space-between; align-items:center;
+       flex-wrap:wrap; gap:12px; margin-top:20px}
+  .count{font-size:14px; color:var(--muted); display:flex; align-items:center;
+         flex-wrap:wrap; gap:8px}
+  .count b{font-size:20px; color:var(--accent); font-weight:700; margin:0 3px}
+  #sortState{
+    font-size:13px; padding:4px 11px; border-radius:14px;
+    background:var(--accent-soft); border:1px solid var(--accent);
+    color:var(--accent); font-weight:600; cursor:pointer; white-space:nowrap;
+  }
+  #sortState:hover{background:var(--accent); color:#fff}
+  #sortState .arrow{font-size:10px; margin-left:3px}
+  #ofTotal:not(:empty){background:#fdf1ef; color:#a2372e; font-size:12px;
+                       border-radius:12px; padding:4px 10px}
+  #exportNote{font-size:12.5px; color:var(--muted); max-width:340px; text-align:right}
+  #exportNote.ok{color:var(--accent)}
+  #exportNote.err{color:var(--up)}
+
+  select{font-family:inherit; font-size:14px; padding:5px 7px; border:1px solid var(--line);
+         border-radius:5px; background:#fff; color:var(--ink)}
+
+  .multi{position:relative}
+  #indBtn{width:100%; text-align:left; padding:6px 26px 6px 8px; font-size:14px;
+          background:#fff; position:relative; overflow:hidden; text-overflow:ellipsis;
+          white-space:nowrap}
+  #indBtn::after{content:'▾'; position:absolute; right:9px; color:var(--muted)}
+  #indBtn.on{border-color:var(--accent); color:var(--accent); font-weight:600}
+  .multi-panel{
+    position:absolute; z-index:30; top:calc(100% + 5px); left:0;
+    width:min(290px, calc(100vw - 32px));
+    background:#fff; border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 6px 20px rgba(0,0,0,.14); padding:10px;
+  }
+  .multi-panel > input[type=text]{margin-bottom:7px}
+  .multi-mode{display:flex; gap:6px; align-items:center; font-size:13px;
+              color:var(--muted); padding:0 2px 7px; cursor:pointer}
+  .multi-mode b{color:var(--up); font-weight:600}
+  .multi-list{max-height:230px; overflow-y:auto; border-top:1px solid var(--line);
+              padding-top:6px}
+  .multi-list label{display:flex; gap:7px; align-items:center; font-size:13px;
+                    padding:4px 5px; border-radius:4px; cursor:pointer}
+  .multi-list label:hover{background:var(--accent-soft)}
+  .multi-list .n{margin-left:auto; color:var(--muted); font-size:12px}
+  .multi-list .none{color:var(--muted); font-size:13px; padding:6px 5px}
+  .multi-foot{display:flex; gap:7px; justify-content:flex-end; margin-top:9px}
+  .multi-foot button{padding:5px 12px; font-size:13px}
+
+  .help{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; margin-left:4px; vertical-align:middle;
+    border:1px solid var(--line); border-radius:50%;
+    font-size:10px; line-height:1; color:var(--muted); background:#fff;
+    cursor:help; user-select:none; flex:none;
+  }
+  .help:hover,.help:focus{border-color:var(--accent); color:var(--accent);
+                          background:var(--accent-soft); outline:none}
+  #tip{
+    position:fixed; z-index:99; display:none;
+    max-width:min(330px, calc(100vw - 16px));
+    background:#2f2f2f; color:#f4f2ee; font-size:13px; line-height:1.6;
+    padding:9px 12px; border-radius:6px; box-shadow:0 3px 12px rgba(0,0,0,.22);
+    white-space:normal; text-align:left; pointer-events:none;
+  }
+  th[data-tip]{text-decoration:underline dotted rgba(0,0,0,.25); text-underline-offset:3px}
+  .dist{margin-top:8px; font-size:13px; color:var(--muted); display:flex;
+        flex-wrap:wrap; gap:6px 10px; align-items:center}
+  .dist .chip{background:var(--accent-soft); color:var(--accent); border-radius:12px;
+              padding:2px 10px; cursor:pointer}
+  .dist .chip:hover{text-decoration:underline}
+  .dist .flag{background:#fdf1ef; color:#a2372e; border-radius:12px; padding:2px 10px}
+
+  .tablebox{margin-top:10px; border:1px solid var(--line); border-radius:8px;
+            overflow:auto; max-height:70vh; background:var(--panel)}
+  table{border-collapse:separate; border-spacing:0; width:100%; font-size:14px}
+  th,td{padding:7px 10px; text-align:right; white-space:nowrap;
+        border-bottom:1px solid #eeebe6}
+  th{position:sticky; top:0; z-index:2; background:#f0eeea; cursor:pointer;
+     font-weight:600; font-size:13px; border-bottom:1px solid var(--line); user-select:none}
+  th:hover{color:var(--accent)}
+  th.sorted{background:var(--accent); color:#fff; font-weight:700;
+            border-bottom-color:var(--accent)}
+  th.sorted:hover{color:#fff}
+  th.sorted::after{content:" ▼"; font-size:10px; margin-left:3px}
+  th.sorted.asc::after{content:" ▲"}
+  td.txt,th.txt{text-align:left}
+  tbody tr:hover{background:#faf8f4}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .tag{font-size:11px; padding:1px 6px; border-radius:3px; background:#eee; color:var(--muted)}
+  .tag.otc{background:#efeaf5; color:#5b4a86}
+  .tag.twse{background:#e6efec; color:var(--accent)}
+  .na{color:#b9b4ac}
+  .empty{padding:40px; text-align:center; color:var(--muted)}
+
+  .notes{font-size:13px; color:var(--muted); margin-top:24px}
+  .notes h2{color:var(--accent); font-size:14px; margin:0 0 8px}
+  .notes ul{margin:0; padding-left:20px}
+  .notes li{margin-bottom:5px}
+  .warn{border-left:3px solid #c9a227; background:#fdfaf0; padding:10px 14px;
+        border-radius:0 6px 6px 0; color:#6b5a20; font-size:13px; margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>台股選股工具</h1>
+  <div class="meta" id="meta"></div>
+</header>
+
+<div class="card">
+  <h2>策略範本</h2>
+  <div class="presets" id="presets">
+    <button data-preset="value">價值型（低本益比 · 低淨值比）</button>
+    <button data-preset="income">存股型（穩定配息 · 高殖利率）</button>
+    <button data-preset="cheapstable">便宜穩健（兩者兼顧）</button>
+    <button data-preset="highyield">純高殖利率</button>
+    <button data-preset="reset">清除所有條件</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>篩選條件</h2>
+  <div class="checks" style="margin-bottom:14px">
+    <label><input type="checkbox" id="mTwse" checked> 上市</label>
+    <label><input type="checkbox" id="mOtc" checked> 上櫃</label>
+    <label data-help="keepUnknown"><input type="checkbox" id="keepUnknown" checked> 保留無配息歷史者（上櫃）</label>
+    <label style="margin-left:auto">
+      搜尋 <input type="text" id="kw" placeholder="代號或名稱" style="width:150px">
+    </label>
+  </div>
+  <div class="grid" id="filters">
+    <div class="field"><label data-help="industry">產業別（可複選）</label>
+      <div class="multi">
+        <button type="button" id="indBtn" aria-expanded="false">全部產業</button>
+        <div class="multi-panel" id="indPanel" hidden>
+          <input type="text" id="indSearch" placeholder="搜尋產業名稱">
+          <label class="multi-mode"><input type="checkbox" id="indExclude">
+            改為<b>排除</b>所選產業</label>
+          <div class="multi-list" id="indList"></div>
+          <div class="multi-foot">
+            <button type="button" id="indNone">清除</button>
+            <button type="button" id="indClose" class="primary">完成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="field"><label data-help="per">本益比 P/E</label><div class="pair">
+      <input type="number" id="perMin" step="0.1" placeholder="最低"><span>～</span>
+      <input type="number" id="perMax" step="0.1" placeholder="最高"></div></div>
+    <div class="field"><label data-help="pbr">股價淨值比 P/B</label><div class="pair">
+      <input type="number" id="pbrMin" step="0.1" placeholder="最低"><span>～</span>
+      <input type="number" id="pbrMax" step="0.1" placeholder="最高"></div></div>
+    <div class="field"><label data-help="yield_pct">殖利率 %</label><div class="pair">
+      <input type="number" id="ydMin" step="0.1" placeholder="最低"><span>～</span>
+      <input type="number" id="ydMax" step="0.1" placeholder="最高"></div></div>
+    <div class="field"><label data-help="div_streak">連續配息年數（上市）</label><div class="pair">
+      <input type="number" id="streakMin" step="1" placeholder="至少"><span>年</span></div></div>
+    <div class="field"><label data-help="payout">配息率上限 %（股利÷近四季EPS）</label><div class="pair">
+      <input type="number" id="payoutMax" step="5" placeholder="至多"><span>%</span></div></div>
+    <div class="field"><label data-help="eps">EPS 累計（元）</label><div class="pair">
+      <input type="number" id="epsMin" step="0.1" placeholder="至少"><span>元</span></div></div>
+    <div class="field"><label data-help="gross_margin">毛利率 %</label><div class="pair">
+      <input type="number" id="gmMin" step="1" placeholder="至少"><span>%</span></div></div>
+    <div class="field"><label data-help="close">股價（元）</label><div class="pair">
+      <input type="number" id="pxMin" step="1" placeholder="最低"><span>～</span>
+      <input type="number" id="pxMax" step="1" placeholder="最高"></div></div>
+    <div class="field"><label data-help="volume_lots">成交量（張）</label><div class="pair">
+      <input type="number" id="volMin" step="100" placeholder="至少"><span>張</span></div></div>
+  </div>
+</div>
+
+<div class="bar">
+  <div class="count">
+    <span>符合條件 <b id="hits">0</b> 檔</span>
+    <button type="button" id="sortState"></button>
+    <span id="ofTotal"></span>
+  </div>
+  <div style="display:flex; gap:10px; align-items:center">
+    <span id="exportNote"></span>
+    <button id="exportBtn" class="primary">匯出目前結果（CSV）</button>
+  </div>
+</div>
+
+<div id="dist" class="dist"></div>
+
+<div class="tablebox">
+  <table id="tbl">
+    <thead><tr id="head"></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">沒有符合條件的股票，把條件放寬一點。</div>
+</div>
+
+<div class="warn" id="warn"></div>
+
+<div class="notes card">
+  <h2>資料來源與限制</h2>
+  <ul>
+    <li>本益比、股價淨值比、殖利率：證交所「個股日本益比、殖利率及股價淨值比」與櫃買中心「上櫃股票個股本益比、殖利率及股價淨值比」。兩者的殖利率都是<b>用最近一次已發放的現金股利除以當日收盤價</b>，屬於「回顧型」殖利率，不代表未來配息。</li>
+    <li>本益比由交易所以<b>最近四季稅後 EPS</b> 計算；虧損公司欄位留空，不是 0。</li>
+    <li>連續配息年數：由證交所「除權除息計算結果表」逐年統計，只涵蓋<b>上市</b>股票。櫃買中心未提供對應的多年度開放資料，因此上櫃股票此欄顯示「—」，代表<b>沒有資料</b>而非沒有配息。</li>
+    <li>「EPS 近四季」與「配息率」是<b>推算值</b>，不是交易所直接公布的。兩所都把本益比定義為「收盤價 ÷ 最近四季每股稅後盈餘」，所以近四季 EPS ＝ 收盤價 ÷ 本益比；配息率 ＝ 現金股利 ÷ 近四季 EPS。虧損公司本益比留空，因此也不會有配息率。</li>
+    <li><b>配息率超過 100%</b> 代表配出去的錢多於近四季賺到的，差額來自過去累積的保留盈餘或資本公積。這在剛完成一波獲利認列的公司（例如營建業交屋年）很常見，本身不必然是壞事，但那個配息水準<b>通常不可持續</b>，用它推估未來殖利率會失準。表格中此欄超過 100 會標紅。</li>
+    <li>「EPS 累計」「毛利率」「營益率」來自公開資訊觀測站的綜合損益表，是<b>當年度累計數</b>（例如 115Q2 為上半年累計），不同季別之間不可直接比較，也不要拿它跟「EPS 近四季」混用。金控、保險、證券業無「營業收入」欄位，毛利率與營益率會留空。</li>
+    <li>產業別取自證交所「上市公司各產業EPS統計資訊」與櫃買中心對應資料，採交易所的分類，與其他券商軟體的分類方式可能不同。</li>
+    <li>篩選範圍只含<b>四位數字代號的普通股</b>，已排除 ETF、ETN、特別股、存託憑證與權證。</li>
+    <li>此工具只做數值篩選，不構成投資建議。任何入選標的都應該回頭看財報、產業與公司公告。</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const rows = DATA.rows, meta = DATA.meta;
+
+const COLS = [
+  {k:'code',   t:'代號',    txt:true},
+  {k:'name',   t:'名稱',    txt:true},
+  {k:'market', t:'市場',    txt:true, render:v=>`<span class="tag ${v==='上市'?'twse':'otc'}">${v}</span>`},
+  {k:'industry', t:'產業別', txt:true},
+  {k:'close',  t:'收盤價',  d:2},
+  {k:'change_pct', t:'漲跌幅%', d:2, signed:true},
+  {k:'per',    t:'本益比',  d:2},
+  {k:'pbr',    t:'淨值比',  d:2},
+  {k:'yield_pct', t:'殖利率%', d:2},
+  {k:'cash_div',  t:'現金股利', d:2},
+  {k:'payout',    t:'配息率%', d:0, warnOver:100},
+  {k:'div_streak',t:'連續配息', d:0, suffix:'年'},
+  {k:'div_years', t:'配息年數', d:0},
+  {k:'eps_ttm',t:'EPS近四季', d:2},
+  {k:'eps',    t:'EPS累計', d:2},
+  {k:'gross_margin', t:'毛利率%', d:1},
+  {k:'op_margin',    t:'營益率%', d:1},
+  {k:'net_margin',   t:'淨利率%', d:1},
+  {k:'volume_lots',  t:'成交量(張)', d:0},
+];
+
+const PRESETS = {
+  value:       {perMin:0, perMax:15, pbrMax:1.5, epsMin:0.01, volMin:300},
+  income:      {ydMin:4, streakMin:5, pbrMax:3, epsMin:0.01, volMin:200, payoutMax:100},
+  cheapstable: {perMin:0, perMax:12, pbrMax:1.2, ydMin:3, streakMin:3, epsMin:0.01,
+                volMin:200, payoutMax:80},
+  highyield:   {ydMin:5, epsMin:0.01, volMin:100},
+  reset:       {}
+};
+
+const NUM_IDS = ['perMin','perMax','pbrMin','pbrMax','ydMin','ydMax','streakMin',
+                 'epsMin','gmMin','pxMin','pxMax','volMin','payoutMax'];
+
+/* Term explanations, shared by the filter labels and the table headers. */
+const TIPS = {
+  code:   '股票代號。上市與上櫃的普通股都是四位數字。',
+  name:   '公司簡稱。結尾 -KY 表示在開曼群島等地註冊的外國企業，適用不同的稅務與法規。',
+  market: '上市在證券交易所掛牌，上櫃在櫃買中心掛牌。上櫃公司通常規模較小、成交較清淡。',
+  industry: '交易所的產業分類。可勾選多個產業，勾選「改為排除所選」則反過來把它們濾掉，'
+        + '例如想避開營建股就選建材營造再切換成排除。不勾任何一項＝不限產業。'
+        + '同產業的公司獲利節奏相近，看結果下方的產業分布可以知道篩選是否過度集中在單一行業。',
+  close:  '最近一個交易日的收盤價，單位為新台幣元。',
+  change_pct: '相對前一交易日收盤價的漲跌百分比。台股慣例：紅色為漲、綠色為跌。',
+  per:    '本益比（Price-to-Earnings Ratio）＝ 股價 ÷ 最近四季每股盈餘。'
+        + '可理解為「照目前的獲利水準，幾年可以回本」。數字低通常代表便宜，'
+        + '但也可能是市場預期它未來會衰退。虧損公司此欄空白，不是 0。',
+  pbr:    '股價淨值比（Price-to-Book Ratio）＝ 股價 ÷ 每股淨值。'
+        + '淨值是公司資產減去負債後、理論上每股能拿回的金額。'
+        + '低於 1 代表股價低於帳面價值，但那些資產是否真值那個價，要另外判斷。',
+  yield_pct: '殖利率（Dividend Yield）＝ 最近一次已發放的現金股利 ÷ 當日收盤價。'
+        + '這是回顧型指標，反映的是過去發過多少，不保證未來會再發一樣多。',
+  cash_div: '最近一次發放的每股現金股利（元）。上櫃為交易所公布值；'
+        + '上市由「殖利率 × 收盤價」反推，可能有小數點誤差。',
+  payout: '配息率（Payout Ratio）＝ 現金股利 ÷ 近四季每股盈餘。'
+        + '100% 代表把賺到的全部配出去；超過 100%（標紅）代表配的比賺的多，'
+        + '差額來自過去累積的保留盈餘，這種配息水準通常無法持續。',
+  div_streak: '從最近一年往回數，連續幾年發過現金股利。'
+        + '只涵蓋上市股票——櫃買中心沒有提供多年度資料，所以上櫃顯示「—」，'
+        + '那代表沒有資料，不是沒有配息。',
+  div_years: '統計區間內總共有幾年發過現金股利，不要求連續。'
+        + '若它明顯大於「連續配息」，表示中間曾經斷過。',
+  eps_ttm: '最近四季每股盈餘，由「收盤價 ÷ 本益比」反推，不是交易所直接公布的數字。'
+        + '用來計算配息率。',
+  eps:    'EPS（Earnings Per Share，每股盈餘）＝ 稅後淨利 ÷ 流通在外股數。'
+        + '這裡是當年度累計數：115Q2 指民國 115 年上半年的合計，不是全年，'
+        + '也不能直接跟「EPS 近四季」比大小。',
+  gross_margin: '毛利率＝ 營業毛利 ÷ 營業收入。每賣一百元扣掉直接生產成本後剩幾元，'
+        + '反映產品本身的競爭力。金控、保險、證券業無營業收入欄位，此欄留空。',
+  op_margin: '營益率＝ 營業利益 ÷ 營業收入。在毛利的基礎上再扣掉管銷與研發等營業費用，'
+        + '比毛利率更接近本業真正的賺錢能力。',
+  net_margin: '淨利率＝ 本期淨利 ÷ 營業收入。已包含業外損益與所得稅，'
+        + '所以會受一次性的資產處分、匯兌損益影響，不全是本業表現。',
+  volume_lots: '當日成交張數，1 張 ＝ 1000 股。'
+        + '成交量太低代表冷門，實際買賣時的價差可能吃掉你算出來的報酬。',
+  keepUnknown: '上櫃股票沒有配息歷史資料。勾選＝就算你設了「連續配息年數」條件，'
+        + '仍把上櫃留在結果裡；取消＝把它們排除。套用存股型範本時會自動取消。',
+};
+const $ = id => document.getElementById(id);
+let sortKey = 'yield_pct', sortAsc = false, view = [];
+
+/* ---------- header ---------- */
+$('meta').innerHTML =
+  `資料日期 <b>${meta.data_date || '未知'}</b> ・ 產生時間 <b>${meta.generated_at}</b> ・ ` +
+  `收錄 <b>${meta.total}</b> 檔普通股（上市 ${meta.listed} ／ 上櫃 ${meta.otc}）`;
+$('warn').innerHTML = meta.history_span
+  ? `「連續配息年數」統計區間為 <b>${meta.history_from}–${meta.history_to} 年</b>，` +
+    `僅涵蓋上市股票；上櫃股票該欄為「—」表示無資料，並非沒有配息。`
+  : `本次執行未抓取除權息歷史，「連續配息年數」全部為空白。`;
+
+/* ---------- industry multi-select ---------- */
+const IND_COUNT = {};
+rows.forEach(r => {
+  const k = r.industry || '未分類';
+  IND_COUNT[k] = (IND_COUNT[k] || 0) + 1;
+});
+const INDUSTRIES = Object.keys(IND_COUNT).sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+const picked = new Set();   // empty == no industry filter at all
+
+function indLabel(){
+  const n = picked.size;
+  if (!n) return '全部產業';
+  const mode = $('indExclude').checked;
+  if (mode) return `排除 ${n} 項產業`;
+  return n === 1 ? [...picked][0] : `已選 ${n} 項產業`;
+}
+
+function drawIndList(){
+  const kw = $('indSearch').value.trim();
+  const show = INDUSTRIES.filter(i => !kw || i.includes(kw));
+  $('indList').innerHTML = show.length
+    ? show.map(i =>
+        `<label><input type="checkbox" value="${i}"${picked.has(i) ? ' checked' : ''}>` +
+        `<span>${i}</span><span class="n">${IND_COUNT[i]}</span></label>`).join('')
+    : '<div class="none">沒有符合的產業</div>';
+  $('indList').querySelectorAll('input').forEach(cb => cb.onchange = () => {
+    cb.checked ? picked.add(cb.value) : picked.delete(cb.value);
+    syncInd();
+    apply();
+  });
+}
+
+function syncInd(){
+  $('indBtn').textContent = indLabel();
+  $('indBtn').classList.toggle('on', picked.size > 0);
+}
+
+function openIndPanel(open){
+  const panel = $('indPanel');
+  panel.hidden = !open;
+  $('indBtn').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  drawIndList();
+  // Nudge the panel back inside the window when the field sits at the right edge.
+  panel.style.left = '0px';
+  const r = panel.getBoundingClientRect();
+  const over = r.right - (window.innerWidth - 8);
+  if (over > 0) panel.style.left = `${-over}px`;
+  $('indSearch').focus();
+}
+
+$('indBtn').onclick = () => openIndPanel($('indPanel').hidden);
+$('indSearch').oninput = drawIndList;
+$('indExclude').onchange = () => { syncInd(); apply(); };
+$('indNone').onclick = () => {
+  picked.clear();
+  $('indExclude').checked = false;
+  drawIndList(); syncInd(); apply();
+};
+$('indClose').onclick = () => openIndPanel(false);
+document.addEventListener('click', e => {
+  if (!$('indPanel').hidden && !e.target.closest('.multi')) openIndPanel(false);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('indPanel').hidden) openIndPanel(false);
+});
+
+/* ---------- tooltips ---------- */
+const tipBox = document.createElement('div');
+tipBox.id = 'tip';
+document.body.appendChild(tipBox);
+
+function showTip(el){
+  const text = el.dataset.tip;
+  if (!text) return;
+  tipBox.textContent = text;
+  // A position:fixed box with only `left` set shrinks to (viewport - left), so
+  // it would get narrower and taller as it moves right and the measurements
+  // below would no longer hold. Measure at the left edge, where the full width
+  // is available, then freeze that width for the actual placement.
+  tipBox.style.width = '';
+  tipBox.style.left = '0px';
+  tipBox.style.top = '0px';
+  tipBox.style.display = 'block';
+  tipBox.style.width = Math.ceil(tipBox.getBoundingClientRect().width) + 'px';
+  const a = el.getBoundingClientRect(), b = tipBox.getBoundingClientRect();
+  // Keep the bubble inside the viewport; flip above the anchor if it would
+  // overflow the bottom (matters for the sticky table headers).
+  let left = a.left + a.width / 2 - b.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - b.width - 8));
+  let top = a.bottom + 8;
+  if (top + b.height > window.innerHeight - 8) top = a.top - b.height - 8;
+  // Flipping alone is not enough when the anchor sits near either edge of a
+  // short window, so clamp into the viewport afterwards as well.
+  top = Math.max(8, Math.min(top, window.innerHeight - b.height - 8));
+  tipBox.style.left = Math.round(left) + 'px';
+  tipBox.style.top = Math.round(top) + 'px';
+}
+const hideTip = () => { tipBox.style.display = 'none'; };
+
+function bindTip(el){
+  el.addEventListener('mouseenter', () => showTip(el));
+  el.addEventListener('mouseleave', hideTip);
+  el.addEventListener('focus', () => showTip(el));
+  el.addEventListener('blur', hideTip);
+}
+
+// Add a "?" badge to every labelled control that has an explanation.
+document.querySelectorAll('[data-help]').forEach(el => {
+  const text = TIPS[el.dataset.help];
+  if (!text) return;
+  const badge = document.createElement('span');
+  badge.className = 'help';
+  badge.textContent = '?';
+  badge.tabIndex = 0;
+  badge.dataset.tip = text;
+  badge.setAttribute('role', 'note');
+  badge.setAttribute('aria-label', text);
+  // A checkbox label would swallow the click, so sit outside it instead.
+  if (el.querySelector('input')) el.insertAdjacentElement('afterend', badge);
+  else el.appendChild(badge);
+  bindTip(badge);
+});
+window.addEventListener('scroll', hideTip, true);
+
+/* ---------- table head ---------- */
+$('head').innerHTML = COLS.map(c => {
+  const tip = TIPS[c.k] ? ` data-tip="${TIPS[c.k].replace(/"/g, '&quot;')}"` : '';
+  return `<th data-k="${c.k}" class="${c.txt?'txt':''}"${tip}>${c.t}</th>`;
+}).join('');
+$('head').querySelectorAll('th[data-tip]').forEach(bindTip);
+$('head').querySelectorAll('th').forEach(th => th.onclick = () => {
+  const k = th.dataset.k;
+  if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = false; }
+  render();
+});
+
+/* ---------- filtering ---------- */
+function num(id){ const v = parseFloat($(id).value); return isNaN(v) ? null : v; }
+
+function inRange(v, lo, hi){
+  if (lo === null && hi === null) return true;
+  if (v === null || v === undefined) return false;   // no data fails an active filter
+  if (lo !== null && v < lo) return false;
+  if (hi !== null && v > hi) return false;
+  return true;
+}
+
+function apply(){
+  const wantTwse = $('mTwse').checked, wantOtc = $('mOtc').checked;
+  const keepUnknown = $('keepUnknown').checked;
+  const kw = $('kw').value.trim().toLowerCase();
+  const exclude = $('indExclude').checked;
+  const f = {}; NUM_IDS.forEach(id => f[id] = num(id));
+
+  view = rows.filter(r => {
+    if (r.market === '上市' ? !wantTwse : !wantOtc) return false;
+    if (picked.size){
+      const hit = picked.has(r.industry || '未分類');
+      if (exclude ? hit : !hit) return false;
+    }
+    if (kw && !(r.code.includes(kw) || (r.name||'').toLowerCase().includes(kw))) return false;
+    if (!inRange(r.payout, null, f.payoutMax)) return false;
+    if (!inRange(r.per, f.perMin, f.perMax)) return false;
+    if (!inRange(r.pbr, f.pbrMin, f.pbrMax)) return false;
+    if (!inRange(r.yield_pct, f.ydMin, f.ydMax)) return false;
+    if (!inRange(r.close, f.pxMin, f.pxMax)) return false;
+    if (!inRange(r.eps, f.epsMin, null)) return false;
+    if (!inRange(r.gross_margin, f.gmMin, null)) return false;
+    if (!inRange(r.volume_lots, f.volMin, null)) return false;
+    if (f.streakMin !== null){
+      // Stocks with no history at all (OTC) are kept or dropped by the checkbox.
+      if (r.div_streak === null || r.div_streak === undefined) return keepUnknown;
+      if (r.div_streak < f.streakMin) return false;
+    }
+    return true;
+  });
+  render();
+}
+
+/* ---------- rendering ---------- */
+function fmt(v, c){
+  if (v === null || v === undefined || v === '') return '<span class="na">—</span>';
+  if (c.render) return c.render(v);
+  if (c.txt) return String(v);
+  const s = Number(v).toLocaleString('zh-TW',
+    {minimumFractionDigits:c.d, maximumFractionDigits:c.d});
+  if (c.signed){
+    const cls = v > 0 ? 'up' : (v < 0 ? 'down' : '');
+    return `<span class="${cls}">${v > 0 ? '+' : ''}${s}</span>`;
+  }
+  // Paying out more than it earned is worth flagging on sight.
+  if (c.warnOver && v > c.warnOver) return `<span class="up">${s}</span>`;
+  return s + (c.suffix || '');
+}
+
+/* Industry mix of the current result set, plus a payout-ratio warning. */
+function distribution(){
+  if (!view.length){ $('dist').innerHTML = ''; return; }
+  const tally = {};
+  view.forEach(r => { const k = r.industry || '未分類'; tally[k] = (tally[k]||0) + 1; });
+  const top = Object.entries(tally).sort((a,b) => b[1]-a[1]).slice(0, 4);
+  let html = '<span>產業分布：</span>' + top.map(([name, n]) =>
+    `<span class="chip" data-ind="${name}">${name} ${n} 檔（${Math.round(n/view.length*100)}%）</span>`
+  ).join('');
+  const over = view.filter(r => r.payout !== null && r.payout > 100).length;
+  if (over) html += `<span class="flag">配息率 &gt; 100%：${over} 檔（配息超過近四季獲利）</span>`;
+  $('dist').innerHTML = html;
+  // Clicking a chip drills into that industry; clicking it again backs out.
+  $('dist').querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    const name = c.dataset.ind;
+    const only = picked.size === 1 && picked.has(name) && !$('indExclude').checked;
+    picked.clear();
+    if (!only) picked.add(name);
+    $('indExclude').checked = false;
+    if (!$('indPanel').hidden) drawIndList();
+    syncInd();
+    apply();
+  });
+}
+
+function render(){
+  const dir = sortAsc ? 1 : -1;
+  view.sort((a, b) => {
+    let x = a[sortKey], y = b[sortKey];
+    const xn = (x === null || x === undefined), yn = (y === null || y === undefined);
+    if (xn && yn) return 0;
+    if (xn) return 1;          // missing values always sink to the bottom
+    if (yn) return -1;
+    if (typeof x === 'string') return x.localeCompare(y, 'zh-Hant') * dir;
+    return (x - y) * dir;
+  });
+
+  $('head').querySelectorAll('th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.k === sortKey);
+    th.classList.toggle('asc', th.dataset.k === sortKey && sortAsc);
+  });
+
+  const col = COLS.find(c => c.k === sortKey);
+  const dirText = col && col.txt
+    ? (sortAsc ? '正序' : '倒序')
+    : (sortAsc ? '由低到高' : '由高到低');
+  $('sortState').innerHTML =
+    `依 ${col ? col.t : sortKey} ${dirText}<span class="arrow">${sortAsc ? '▲' : '▼'}</span>`;
+
+  const shown = view.slice(0, 500);
+  $('body').innerHTML = shown.map(r =>
+    '<tr>' + COLS.map(c =>
+      `<td class="${c.txt?'txt':''}">${fmt(r[c.k], c)}</td>`).join('') + '</tr>').join('');
+  $('empty').style.display = view.length ? 'none' : 'block';
+  $('hits').textContent = view.length;
+  $('ofTotal').textContent = view.length > 500
+    ? `表格只顯示前 500 檔，完整 ${view.length} 檔請匯出 CSV` : '';
+  distribution();
+}
+
+/* ---------- presets ---------- */
+function setPreset(name){
+  NUM_IDS.forEach(id => $(id).value = '');
+  const p = PRESETS[name] || {};
+  Object.keys(p).forEach(id => $(id).value = p[id]);
+  if (name === 'reset'){
+    $('mTwse').checked = $('mOtc').checked = $('keepUnknown').checked = true;
+    $('kw').value = '';
+    picked.clear();
+    $('indExclude').checked = false;
+    $('indSearch').value = '';
+    if (!$('indPanel').hidden) drawIndList();
+    syncInd();
+  }
+  // Dividend-streak presets are meaningless for stocks with no history.
+  $('keepUnknown').checked = !('streakMin' in p);
+  document.querySelectorAll('#presets button').forEach(b =>
+    b.classList.toggle('active', b.dataset.preset === name && name !== 'reset'));
+  apply();
+}
+document.querySelectorAll('#presets button').forEach(b =>
+  b.onclick = () => setPreset(b.dataset.preset));
+
+/* ---------- CSV export ----------
+   Two delivery paths. Opened as a local file there is no `claude` object and a
+   blob link downloads directly. Published as an Artifact the viewer blocks any
+   download the page starts itself, so the file has to go through the downloads
+   capability, which asks the viewer for confirmation. */
+const HOSTED = typeof claude !== 'undefined' && typeof claude.use === 'function';
+let downloads, downloadsResolved = false;
+
+async function getDownloads(){
+  if (downloadsResolved) return downloads;
+  downloadsResolved = true;
+  try { downloads = await claude.use('downloads'); }
+  catch { downloads = null; }
+  return downloads;
+}
+
+function note(text, kind){
+  $('exportNote').textContent = text || '';
+  $('exportNote').className = kind || '';
+}
+
+function buildCsv(){
+  const esc = v => {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [COLS.map(c => c.t).join(',')];
+  view.forEach(r => lines.push(COLS.map(c => esc(r[c.k])).join(',')));
+  return '﻿' + lines.join('\r\n');   // BOM so Excel detects UTF-8
+}
+
+function saveLocally(filename, text){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'text/csv;charset=utf-8'}));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+const EXPORT_ERRORS = {
+  declined:    '已取消匯出。',
+  rate_limited:'剛剛才問過一次，請等幾秒再按。',
+  too_large:   '資料量太大，請先縮小篩選範圍再匯出。',
+  bad_request: '檔案內容有問題，請重新整理頁面再試。',
+};
+
+$('exportBtn').onclick = async () => {
+  if (!view.length){ note('目前沒有符合條件的股票。', 'err'); return; }
+  const csv = buildCsv();
+  const stem = `選股結果_${(meta.data_date || '').replace(/-/g, '')}`;
+
+  if (!HOSTED){ saveLocally(stem + '.csv', csv); note(`已匯出 ${view.length} 檔。`, 'ok'); return; }
+
+  const api = await getDownloads();
+  if (!api){ note('這個檢視環境不支援下載檔案。', 'err'); return; }
+
+  note('等待你確認儲存…');
+  try {
+    await api.save({filename: stem + '.csv', data: csv});
+    note(`已儲存 ${view.length} 檔。`, 'ok');
+  } catch (err) {
+    const code = err && err.code;
+    // .csv belongs to the extended extension set and may not be enabled here;
+    // the same text saved as .txt opens in Excel once renamed.
+    if (code === 'extension_not_enabled'){
+      try {
+        await api.save({filename: stem + '.txt', data: csv});
+        note(`已儲存為 .txt，改副檔名為 .csv 就能用 Excel 開啟。`, 'ok');
+      } catch (err2) {
+        note(EXPORT_ERRORS[err2 && err2.code] || '無法儲存檔案。', 'err');
+      }
+      return;
+    }
+    note(EXPORT_ERRORS[code] || '無法儲存檔案。', 'err');
+  }
+};
+
+// Resolve the capability up front so an unusable button never looks usable.
+if (HOSTED) getDownloads().then(api => {
+  if (!api){
+    $('exportBtn').disabled = true;
+    $('exportBtn').style.opacity = '.5';
+    $('exportBtn').style.cursor = 'not-allowed';
+    note('這個檢視環境不支援下載檔案。');
+  }
+});
+
+/* The chip both reports the current sort and flips its direction. */
+$('sortState').onclick = () => { sortAsc = !sortAsc; render(); };
+$('sortState').dataset.tip =
+  '目前的排序方式，點一下可反轉方向；也可以直接點表格的欄位標題改排序欄位。'
+  + '沒有資料的股票（例如虧損公司沒有本益比）不論方向一律排在最後，'
+  + '避免空白被當成 0 而衝到最前面。';
+bindTip($('sortState'));
+
+/* ---------- wire up ---------- */
+NUM_IDS.forEach(id => $(id).addEventListener('input', apply));
+['mTwse','mOtc','keepUnknown'].forEach(id => $(id).addEventListener('change', apply));
+$('kw').addEventListener('input', apply);
+syncInd();
+apply();
+</script>
+</body>
+</html>

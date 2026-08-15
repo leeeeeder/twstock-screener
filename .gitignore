@@ -1,0 +1,8 @@
+# Downloaded open data, re-fetched on every run
+cache/
+
+# Generated CSV / HTML, rebuilt by twstock_screener.py
+output/
+
+__pycache__/
+*.pyc
