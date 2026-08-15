@@ -82,6 +82,28 @@ HTML 介面裡有四個策略範本（價值型／存股型／便宜穩健／純
 
 目前的網址：<https://claude.ai/code/artifact/ffc437ba-4048-4a89-9302-228df7244344>
 
+### 自動更新：雲端排程行不通
+
+**已確認雲端排程無法用於這個專案**，原因記錄在此以免日後重踩。
+
+雲端沙箱的出口流量走一個有網域白名單的代理，白名單只包含 anthropic.com、npm、pypi、
+crates 等開發用途的來源。連向交易所會被擋：
+
+```
+urlopen error Tunnel connection failed: 403 Forbidden
+  https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL
+  https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis
+```
+
+這是環境層級的網路政策，不是腳本、權限或 Python 版本的問題——clone 成功、`python3`
+存在、腳本本身在乾淨 clone 下實測可跑。純粹是連不出去。
+
+已建立但**停用**的排程：`trig_01GshEoE1KqDfaHr7HLFdjwJ`（管理頁面
+<https://claude.ai/code/routines>）。保留著是為了記錄，若哪天環境開放了台灣交易所網域，
+把它重新啟用即可，設定都還在。
+
+因此自動更新只能在本機做，見上方「怎麼用」。
+
 ### 匯出 CSV 的兩條路
 
 Artifact 檢視器會封鎖頁面自己發起的下載，`<a download>` 和 blob 連結對訪客完全無效。

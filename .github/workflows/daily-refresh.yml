@@ -1,0 +1,56 @@
+name: Daily data refresh
+
+# Fetches the exchange open data and commits the rebuilt artifact page.
+#
+# This runs here rather than inside the Claude cloud routine because that
+# sandbox's egress proxy allowlists only development sources (anthropic.com,
+# npm, pypi, crates) and refuses openapi.twse.com.tw / www.tpex.org.tw with
+# "Tunnel connection failed: 403 Forbidden". GitHub-hosted runners have
+# unrestricted outbound network, so the fetch happens here and the routine
+# only has to clone and publish.
+
+on:
+  schedule:
+    # 10:00 UTC = 18:00 Taipei, weekdays. The market closes at 13:30 but the
+    # exchanges do not publish the daily files until roughly 14:00-15:00.
+    - cron: '0 10 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Fetch data and rebuild pages
+        run: python twstock_screener.py
+
+      - name: Verify the artifact was produced
+        run: |
+          test -s output/artifact.html
+          echo "artifact.html size: $(wc -c < output/artifact.html) bytes"
+
+      - name: Commit the refreshed artifact
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f output/artifact.html
+          if git diff --staged --quiet; then
+            echo "Nothing changed."
+          else
+            git commit -m "Refresh screener data ($(date -u +%Y-%m-%d))"
+            git push
+          fi

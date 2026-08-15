@@ -1,8 +1,11 @@
 # Downloaded open data, re-fetched on every run
 cache/
 
-# Generated CSV / HTML, rebuilt by twstock_screener.py
-output/
+# Generated CSV / dated HTML, rebuilt by twstock_screener.py.
+# artifact.html is the exception: the daily workflow commits it so the Claude
+# cloud routine can publish it without needing network access to the exchanges.
+output/*
+!output/artifact.html
 
 __pycache__/
 *.pyc
