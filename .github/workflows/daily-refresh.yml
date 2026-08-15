@@ -38,10 +38,21 @@ jobs:
       - name: Fetch data and rebuild pages
         run: python twstock_screener.py
 
-      - name: Verify the artifact was produced
+      # A non-empty file is not proof of a good file: a run that lost one
+      # exchange still writes a valid-looking page. Check both markets are
+      # represented before anything gets committed.
+      - name: Verify both markets are present
         run: |
           test -s output/artifact.html
-          echo "artifact.html size: $(wc -c < output/artifact.html) bytes"
+          python - <<'PY'
+          import json, re, sys
+          html = open('output/artifact.html', encoding='utf-8').read()
+          meta = json.loads(re.search(r'"meta":(\{.*?\}),"rows"', html).group(1))
+          listed, otc = meta['listed'], meta['otc']
+          print(f"資料日期 {meta['data_date']}  上市 {listed}  上櫃 {otc}")
+          if listed < 900 or otc < 700:
+              sys.exit(f"市場資料不完整（上市 {listed} / 上櫃 {otc}），不予提交。")
+          PY
 
       - name: Commit the refreshed artifact
         run: |

@@ -490,6 +490,8 @@ def main() -> int:
                         help="忽略當日快取，重新下載")
     parser.add_argument("--skip-history", action="store_true",
                         help="跳過除權息歷史（快很多，但沒有連續配息年數）")
+    parser.add_argument("--allow-partial", action="store_true",
+                        help="即使有一邊市場完全抓不到也照樣輸出（預設會中止）")
     args = parser.parse_args()
 
     today = dt.date.today().strftime("%Y%m%d")
@@ -504,6 +506,19 @@ def main() -> int:
     if not stocks:
         log("\n沒有取得任何資料，請檢查網路連線後重試。")
         return 1
+
+    # A whole market missing means an exchange blocked or broke, not that the
+    # market is empty. Writing that file anyway looks successful while silently
+    # dropping half the universe, so stop unless the caller opted in.
+    listed_count = sum(1 for r in stocks.values() if r["market"] == "上市")
+    otc_count = len(stocks) - listed_count
+    if (not listed_count or not otc_count) and not args.allow_partial:
+        missing = "上市" if not listed_count else "上櫃"
+        log(f"\n中止：完全沒有取得{missing}資料"
+            f"（上市 {listed_count} / 上櫃 {otc_count}）。")
+        log("這通常代表該交易所擋住了這台機器，而不是真的沒有股票。")
+        log("確定要輸出不完整的結果，請加上 --allow-partial。")
+        return 2
 
     load_quotes(stocks, use_cache)
     load_industry(stocks, use_cache)

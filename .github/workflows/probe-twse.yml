@@ -1,0 +1,41 @@
+name: Probe TWSE reachability
+
+# Diagnostic only: shows what the TWSE endpoints actually return from a
+# GitHub-hosted runner, which fetches as non-JSON with no useful error.
+# Safe to delete once the question is settled.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Where is this runner
+        run: curl -s https://ipinfo.io/json || true
+
+      - name: openapi.twse.com.tw
+        run: |
+          echo "--- headers ---"
+          curl -sS -D - -o body.txt -w '\nHTTP %{http_code}\n' \
+            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' \
+            https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL || true
+          echo "--- first 600 bytes of body ---"
+          head -c 600 body.txt || true
+          echo ""
+
+      - name: www.twse.com.tw exRight
+        run: |
+          curl -sS -D - -o body2.txt -w '\nHTTP %{http_code}\n' \
+            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' \
+            'https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=20250101&endDate=20251231&response=json' || true
+          echo "--- first 600 bytes of body ---"
+          head -c 600 body2.txt || true
+          echo ""
+
+      - name: tpex for comparison
+        run: |
+          curl -sS -o body3.txt -w 'HTTP %{http_code}\n' \
+            https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis || true
+          echo "bytes: $(wc -c < body3.txt)"
