@@ -1,8 +1,8 @@
 name: Probe TWSE reachability
 
-# Diagnostic only: shows what the TWSE endpoints actually return from a
-# GitHub-hosted runner, which fetches as non-JSON with no useful error.
-# Safe to delete once the question is settled.
+# Diagnostic only. curl reaches TWSE fine from a runner but the script's
+# urllib calls come back as non-JSON, so isolate which request property the
+# exchange objects to. Safe to delete once the question is settled.
 
 on:
   workflow_dispatch:
@@ -12,30 +12,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Where is this runner
-        run: curl -s https://ipinfo.io/json || true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
-      - name: openapi.twse.com.tw
+      - name: Compare user agents through urllib
         run: |
-          echo "--- headers ---"
-          curl -sS -D - -o body.txt -w '\nHTTP %{http_code}\n' \
-            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' \
-            https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL || true
-          echo "--- first 600 bytes of body ---"
-          head -c 600 body.txt || true
-          echo ""
+          python - <<'PY'
+          import ssl, urllib.request, urllib.error
 
-      - name: www.twse.com.tw exRight
-        run: |
-          curl -sS -D - -o body2.txt -w '\nHTTP %{http_code}\n' \
-            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' \
-            'https://www.twse.com.tw/rwd/zh/exRight/TWT49U?startDate=20250101&endDate=20251231&response=json' || true
-          echo "--- first 600 bytes of body ---"
-          head -c 600 body2.txt || true
-          echo ""
+          ctx = ssl.create_default_context()
+          ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
 
-      - name: tpex for comparison
-        run: |
-          curl -sS -o body3.txt -w 'HTTP %{http_code}\n' \
-            https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis || true
-          echo "bytes: $(wc -c < body3.txt)"
+          URLS = {
+            'openapi': 'https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL',
+            'rwd': 'https://www.twse.com.tw/rwd/zh/exRight/TWT49U'
+                   '?startDate=20250101&endDate=20251231&response=json',
+          }
+          AGENTS = {
+            'script UA (suffixed)': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) twstock-screener/1.0',
+            'plain browser UA':     'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'python default':       None,
+          }
+
+          for site, url in URLS.items():
+              for label, ua in AGENTS.items():
+                  headers = {'User-Agent': ua} if ua else {}
+                  req = urllib.request.Request(url, headers=headers)
+                  try:
+                      with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
+                          body = r.read()
+                      head = body[:40].decode('utf-8', 'replace').replace('\n', ' ')
+                      print(f"{site:8} | {label:22} | HTTP {r.status} | "
+                            f"{len(body):>7} bytes | {head}")
+                  except Exception as exc:
+                      print(f"{site:8} | {label:22} | FAILED | {type(exc).__name__}: {exc}")
+          PY
