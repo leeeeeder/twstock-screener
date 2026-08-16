@@ -344,6 +344,11 @@ const TIPS = {
         + '仍把上櫃留在結果裡；取消＝把它們排除。套用存股型範本時會自動取消。',
 };
 const $ = id => document.getElementById(id);
+// The whole universe is under 2000 rows, so the table can simply show
+// everything. Published as a shared artifact the CSV export is unavailable
+// (declaring a runtime capability blocks public sharing), which would make a
+// truncated table a dead end.
+const ROW_LIMIT = 2500;
 let sortKey = 'yield_pct', sortAsc = false, view = [];
 
 /* ---------- header ---------- */
@@ -600,14 +605,14 @@ function render(){
   $('sortState').innerHTML =
     `依 ${col ? col.t : sortKey} ${dirText}<span class="arrow">${sortAsc ? '▲' : '▼'}</span>`;
 
-  const shown = view.slice(0, 500);
+  const shown = view.slice(0, ROW_LIMIT);
   $('body').innerHTML = shown.map(r =>
     '<tr>' + COLS.map(c =>
       `<td class="${c.txt?'txt':''}">${fmt(r[c.k], c)}</td>`).join('') + '</tr>').join('');
   $('empty').style.display = view.length ? 'none' : 'block';
   $('hits').textContent = view.length;
-  $('ofTotal').textContent = view.length > 500
-    ? `表格只顯示前 500 檔，完整 ${view.length} 檔請匯出 CSV` : '';
+  $('ofTotal').textContent = view.length > ROW_LIMIT
+    ? `表格只顯示前 ${ROW_LIMIT} 檔，完整 ${view.length} 檔請匯出 CSV` : '';
   distribution();
 }
 
@@ -717,7 +722,7 @@ if (HOSTED) getDownloads().then(api => {
     $('exportBtn').disabled = true;
     $('exportBtn').style.opacity = '.5';
     $('exportBtn').style.cursor = 'not-allowed';
-    note('這個檢視環境不支援下載檔案。');
+    note('分享版無法下載檔案，表格已直接列出全部結果。');
   }
 });
 
@@ -730,9 +735,16 @@ $('sortState').dataset.tip =
 bindTip($('sortState'));
 
 /* ---------- wire up ---------- */
-NUM_IDS.forEach(id => $(id).addEventListener('input', apply));
+// Redrawing the full table costs a few hundred ms, so typing waits for a
+// pause; deliberate clicks still apply immediately.
+let applyTimer = null;
+function applySoon(){
+  clearTimeout(applyTimer);
+  applyTimer = setTimeout(apply, 160);
+}
+NUM_IDS.forEach(id => $(id).addEventListener('input', applySoon));
 ['mTwse','mOtc','keepUnknown'].forEach(id => $(id).addEventListener('change', apply));
-$('kw').addEventListener('input', apply);
+$('kw').addEventListener('input', applySoon);
 syncInd();
 apply();
 </script>
