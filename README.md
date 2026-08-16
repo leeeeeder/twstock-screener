@@ -82,27 +82,52 @@ HTML 介面裡有四個策略範本（價值型／存股型／便宜穩健／純
 
 目前的網址：<https://claude.ai/code/artifact/ffc437ba-4048-4a89-9302-228df7244344>
 
-### 自動更新：雲端排程行不通
+### 自動更新
 
-**已確認雲端排程無法用於這個專案**，原因記錄在此以免日後重踩。
+每個交易日自動更新，不需要開電腦。分成兩段，各自跑在能做該件事的地方：
 
-雲端沙箱的出口流量走一個有網域白名單的代理，白名單只包含 anthropic.com、npm、pypi、
-crates 等開發用途的來源。連向交易所會被擋：
+| 時間（台北） | 誰 | 做什麼 |
+|---|---|---|
+| 18:00 | GitHub Actions（`.github/workflows/daily-refresh.yml`） | 抓交易所資料、重建頁面、把 `output/artifact.html` commit 回 repo |
+| 18:30 | Claude 雲端排程 `trig_01GshEoE1KqDfaHr7HLFdjwJ` | clone repo，把那個檔案發布到既有網址 |
+
+**為什麼要拆兩段。** Claude 雲端沙箱的出口代理只放行開發用途的網域
+（anthropic.com、npm、pypi、crates），連交易所會被擋掉：
 
 ```
 urlopen error Tunnel connection failed: 403 Forbidden
-  https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL
-  https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis
+  https://openapi.twse.com.tw/...
 ```
 
-這是環境層級的網路政策，不是腳本、權限或 Python 版本的問題——clone 成功、`python3`
-存在、腳本本身在乾淨 clone 下實測可跑。純粹是連不出去。
+GitHub-hosted runner 則沒有這個限制。所以抓資料放 Actions，發布放雲端排程——
+後者只需要 clone，而 clone 走的是 GitHub，不受那道代理影響。
 
-已建立但**停用**的排程：`trig_01GshEoE1KqDfaHr7HLFdjwJ`（管理頁面
-<https://claude.ai/code/routines>）。保留著是為了記錄，若哪天環境開放了台灣交易所網域，
-把它重新啟用即可，設定都還在。
+排程管理頁面：<https://claude.ai/code/routines>
 
-因此自動更新只能在本機做，見上方「怎麼用」。
+兩邊都有「資料不完整就不要往下走」的檢查，理由見下方。排程的指令裡也寫死了
+**不傳 `capabilities`**（省略才會沿用既有的 downloads 授權，傳 `{}` 會清掉，
+訪客就不能匯出 CSV）與**不傳 `contract`**。
+
+前置作業（只需做一次）：Claude GitHub App 必須安裝在 `leeeeeder` 帳號並涵蓋這個 repo，
+否則建立排程時會回 403。
+
+### 為什麼要擋「不完整」的結果
+
+第一次的 Actions 執行拿到了櫃買的 889 檔，但證交所全軍覆沒，於是產生一個
+「上市 0 檔」的頁面——而當時的檢查只驗檔案非空，889 檔確實非空，所以它被 commit 了。
+**一個非空的檔案不等於一個完整的檔案。**
+
+後續查證：curl 與 urllib 從 runner 連證交所都是 HTTP 200，換過三種 User-Agent 也都正常。
+所以那不是封鎖，是**速率限制**——腳本把約 10 個證交所端點連續打完，整批被拒，
+而櫃買在另一台主機上完全不受影響。
+
+因此有兩道防線：
+
+1. `twstock_screener.py` 若任一市場完全沒抓到就 exit 2，不產生檔案（`--allow-partial` 可覆寫）
+2. workflow 與雲端排程都會在動作前檢查上市 ≥ 900、上櫃 ≥ 700
+
+以及一道預防：`fetch_json()` 對同一主機強制間隔 1.5 秒，重試退避 5／10／15 秒。
+整趟約多花 15 秒，換掉整個失敗模式。
 
 ### 匯出 CSV 的兩條路
 

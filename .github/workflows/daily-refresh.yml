@@ -63,5 +63,7 @@ jobs:
             echo "Nothing changed."
           else
             git commit -m "Refresh screener data ($(date -u +%Y-%m-%d))"
+            # The fetch takes minutes, so main may have moved since checkout.
+            git pull --rebase --autostash origin main
             git push
           fi
