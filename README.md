@@ -70,7 +70,36 @@ HTML 介面裡有四個策略範本（價值型／存股型／便宜穩健／純
 
 ---
 
-## 分享成網址
+## 公開網址（GitHub Pages）
+
+**<https://leeeeeder.github.io/twstock-screener/>**
+
+這是要給別人看的網址。不需要帳號、不需要登入，每個交易日自動更新。
+CSV 也一併部署在 `twstock_latest.csv`。
+
+`.github/workflows/daily-refresh.yml` 抓完資料後直接部署到 Pages，所以資料一更新，
+訪客重新整理就看得到，中間沒有任何人工步驟。
+
+服務的是 `output/index.html`（**完整的 HTML 文件**），不是 `output/artifact.html`
+（那是剝掉 `<html>`／`<head>`／`<body>` 的片段，只能在 Artifact 的外層骨架裡運作，
+單獨放到網站上會壞掉）。兩個檔案由同一份 `template.html` 產生。
+
+### 為什麼不用 Artifact 分享
+
+Artifact 的分享機制對這個用途有兩個硬限制，合起來讓它無法用於「每天自動更新給別人看」：
+
+1. **公開連結會釘住版本。** 訪客永遠停在你按分享當下那一版，之後的更新不會傳達過去，
+   而且**不會有任何錯誤提示**。想改成跟隨 Latest 會被擋下：
+   「Can't switch to Latest while shared publicly. Change who has access first.」
+2. **存取名單只能有擁有者。** 分享對話框的「People with access」沒有邀請他人的功能，
+   所以「限定特定人 + Latest」這個組合實際上不存在——選了限制模式就等於只有你自己看得到。
+
+外加一項：Artifact 的檢視器會封鎖頁面發起的下載，要匯出 CSV 就得宣告 `downloads` 能力，
+而宣告任何能力又會禁止公開分享。Pages 沒有這些限制，**匯出 CSV 在網站上可以正常使用**。
+
+Artifact 版本仍然保留（見下方），但它現在是次要的。
+
+## 分享成網址（Artifact，次要）
 
 `output/artifact.html` 是發布用的版本，內容與本機版完全相同，差別只在**去掉了
 `<!DOCTYPE>`／`<html>`／`<head>`／`<body>` 外層標籤**——Claude Artifact 會用自己的骨架
