@@ -29,6 +29,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -130,7 +131,23 @@ def roc_to_iso(roc: str):
     return f"{int(digits[:3]) + 1911:04d}-{digits[3:5]}-{digits[5:7]}"
 
 
-def fetch_json(url: str, cache_key: str, use_cache: bool = True, retries: int = 3):
+# Minimum gap between requests to the same host. TWSE throttles per IP: a run
+# that fired ~10 of its endpoints back to back had every single one come back
+# as non-JSON while TPEx, a different host, was untouched. Pacing costs about
+# fifteen seconds per run and removes the whole failure mode.
+MIN_HOST_INTERVAL = 1.5
+_last_request: dict[str, float] = {}
+
+
+def throttle(url: str) -> None:
+    host = urllib.parse.urlsplit(url).netloc
+    wait = MIN_HOST_INTERVAL - (time.monotonic() - _last_request.get(host, 0.0))
+    if wait > 0:
+        time.sleep(wait)
+    _last_request[host] = time.monotonic()
+
+
+def fetch_json(url: str, cache_key: str, use_cache: bool = True, retries: int = 4):
     """GET JSON with an on-disk cache. Returns None if the source is unavailable."""
     path = os.path.join(CACHE_DIR, cache_key + ".json")
     if use_cache and os.path.exists(path):
@@ -142,6 +159,7 @@ def fetch_json(url: str, cache_key: str, use_cache: bool = True, retries: int = 
 
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     for attempt in range(1, retries + 1):
+        throttle(url)
         try:
             with urllib.request.urlopen(request, timeout=90, context=SSL_CTX) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
@@ -153,7 +171,8 @@ def fetch_json(url: str, cache_key: str, use_cache: bool = True, retries: int = 
             if attempt == retries:
                 log(f"  ! 取得失敗（已略過）: {url}\n    {exc}")
                 return None
-            time.sleep(2 * attempt)
+            # Back off hard: if this is throttling, short retries make it worse.
+            time.sleep(5 * attempt)
     return None
 
 
