@@ -97,7 +97,10 @@ Artifact 的分享機制對這個用途有兩個硬限制，合起來讓它無�
 外加一項：Artifact 的檢視器會封鎖頁面發起的下載，要匯出 CSV 就得宣告 `downloads` 能力，
 而宣告任何能力又會禁止公開分享。Pages 沒有這些限制，**匯出 CSV 在網站上可以正常使用**。
 
-Artifact 版本仍然保留（見下方），但它現在是次要的。
+Artifact 版本的網址仍在，但**每日自動發布的排程已停用**
+（`trig_01GshEoE1KqDfaHr7HLFdjwJ`，管理頁面 <https://claude.ai/code/routines>），
+因為 Pages 已經完全取代它的用途，繼續跑只是白花 Claude 用量。
+排程設定保留著，想恢復隨時可以啟用。
 
 ## 分享成網址（Artifact，次要）
 
