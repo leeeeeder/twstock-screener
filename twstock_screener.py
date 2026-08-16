@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import http.client
 import json
 import os
 import ssl
@@ -167,9 +168,12 @@ def fetch_json(url: str, cache_key: str, use_cache: bool = True, retries: int = 
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(payload, fh, ensure_ascii=False)
             return payload
-        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+        # OSError covers URLError, TimeoutError and reset connections;
+        # HTTPException covers IncompleteRead, which a truncated multi-megabyte
+        # response raises and which used to escape and kill the whole run.
+        except (OSError, http.client.HTTPException, json.JSONDecodeError) as exc:
             if attempt == retries:
-                log(f"  ! 取得失敗（已略過）: {url}\n    {exc}")
+                log(f"  ! 取得失敗（已略過）: {url}\n    {type(exc).__name__}: {exc}")
                 return None
             # Back off hard: if this is throttling, short retries make it worse.
             time.sleep(5 * attempt)
@@ -540,6 +544,16 @@ def main() -> int:
         return 2
 
     load_quotes(stocks, use_cache)
+
+    # Quotes come from different endpoints than the valuation counts checked
+    # above, so they can fail on their own and leave every price blank while the
+    # page still looks populated.
+    priced = sum(1 for r in stocks.values() if r["close"] is not None)
+    if priced < len(stocks) * 0.8 and not args.allow_partial:
+        log(f"\n中止：只有 {priced}/{len(stocks)} 檔取得收盤價，行情資料不完整。")
+        log("確定要輸出不完整的結果，請加上 --allow-partial。")
+        return 2
+
     load_industry(stocks, use_cache)
     load_income(stocks, use_cache)
     compute_payout(stocks)
