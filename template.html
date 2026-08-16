@@ -6,24 +6,40 @@
 <title>台股選股工具</title>
 <style>
   :root{
-    --bg:#f7f6f3; --panel:#ffffff; --ink:#232323; --muted:#6b6b6b;
-    --line:#dcd8d0; --accent:#2f5d50; --accent-soft:#e6efec;
-    --up:#c8342b; --down:#1a7a4c;
+    /* Cool paper rather than warm cream: this is a market board, not a
+       magazine, and the neutrals lean the same blue as the accent so the
+       greys read as chosen rather than inherited. */
+    --bg:#eef1f6; --panel:#ffffff; --ink:#131a24; --muted:#5c6875;
+    --line:#dbe2ea; --line-soft:#eaeef4;
+    --accent:#0f4c81; --accent-soft:#e3edf7;
+    /* Semantic colours, deliberately outside the accent family.
+       Taiwan convention: red is up, green is down. */
+    --up:#c62828; --down:#0d7a52; --warn:#9a6700; --warn-soft:#fdf3e0;
+    --band:#f5f8fb;
   }
   *{box-sizing:border-box}
   body{
     margin:0; background:var(--bg); color:var(--ink);
     font-family:"Noto Sans TC","微軟正黑體","Microsoft JhengHei",sans-serif;
     font-size:15px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:1400px; margin:0 auto; padding:24px 20px 64px}
-  header h1{font-size:22px; margin:0 0 4px}
-  header .meta{color:var(--muted); font-size:13px}
-  header .meta b{color:var(--ink); font-weight:600}
+  .wrap{max-width:1560px; margin:0 auto; padding:22px 20px 64px}
 
-  .card{background:var(--panel); border:1px solid var(--line); border-radius:8px;
-        padding:16px 18px; margin-top:16px}
-  .card h2{font-size:15px; margin:0 0 12px; letter-spacing:.04em; color:var(--accent)}
+  /* Header doubles as the summary strip: what this is, and what it is made of. */
+  header{display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px 28px;
+         padding-bottom:14px; border-bottom:2px solid var(--accent)}
+  header h1{font-size:21px; margin:0; letter-spacing:.02em; font-weight:700}
+  header h1 span{color:var(--accent)}
+  .stats{display:flex; flex-wrap:wrap; gap:0 26px; margin-left:auto}
+  .stat{display:flex; flex-direction:column; line-height:1.25}
+  .stat .k{font-size:11px; color:var(--muted); letter-spacing:.08em}
+  .stat .v{font-size:15px; font-weight:600; font-variant-numeric:tabular-nums}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:6px;
+        padding:15px 17px; margin-top:14px}
+  .card h2{font-size:12px; margin:0 0 12px; letter-spacing:.11em; color:var(--muted);
+           font-weight:700; text-transform:uppercase}
 
   .presets{display:flex; flex-wrap:wrap; gap:8px}
   button{
@@ -36,9 +52,15 @@
   button.primary:hover{opacity:.88; color:#fff}
   button.active{background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:600}
 
-  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px 18px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:11px 16px}
+  /* Section rule inside the filter grid, so 16 inputs read as four topics. */
+  .grid .sec{grid-column:1/-1; display:flex; align-items:center; gap:10px;
+             font-size:11px; letter-spacing:.11em; font-weight:700;
+             color:var(--accent); margin-top:4px}
+  .grid .sec::after{content:''; flex:1; height:1px; background:var(--line)}
+  .grid .sec:first-child{margin-top:0}
   .field{display:flex; flex-direction:column; gap:4px}
-  .field label{font-size:13px; color:var(--muted)}
+  .field label{font-size:12.5px; color:var(--muted)}
   .field .pair{display:flex; align-items:center; gap:6px}
   input[type=number],input[type=text]{
     font-family:inherit; font-size:14px; width:100%; padding:6px 8px;
@@ -121,29 +143,43 @@
   .dist .chip:hover{text-decoration:underline}
   .dist .flag{background:#fdf1ef; color:#a2372e; border-radius:12px; padding:2px 10px}
 
-  .tablebox{margin-top:10px; border:1px solid var(--line); border-radius:8px;
-            overflow:auto; max-height:70vh; background:var(--panel)}
-  table{border-collapse:separate; border-spacing:0; width:100%; font-size:14px}
-  th,td{padding:7px 10px; text-align:right; white-space:nowrap;
-        border-bottom:1px solid #eeebe6}
-  th{position:sticky; top:0; z-index:2; background:#f0eeea; cursor:pointer;
-     font-weight:600; font-size:13px; border-bottom:1px solid var(--line); user-select:none}
+  .tablebox{margin-top:10px; border:1px solid var(--line); border-radius:6px;
+            overflow:auto; max-height:72vh; background:var(--panel)}
+  table{border-collapse:separate; border-spacing:0; width:100%; font-size:13.5px}
+  th,td{padding:6px 10px; text-align:right; white-space:nowrap;
+        border-bottom:1px solid var(--line-soft)}
+  /* Digits line up column-wise; without this every row jitters. */
+  td{font-variant-numeric:tabular-nums}
+  td.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:13px}
+  th{position:sticky; top:22px; z-index:2; background:#e8edf3; cursor:pointer;
+     font-weight:700; font-size:12px; letter-spacing:.02em;
+     border-bottom:1px solid var(--line); user-select:none; color:var(--muted)}
   th:hover{color:var(--accent)}
-  th.sorted{background:var(--accent); color:#fff; font-weight:700;
+  /* Group row: real table cells so the labels line up with their columns.
+     It scrolls sideways with the body, unlike the two frozen columns. */
+  #groupHead th{top:0; height:22px; padding:1px 10px; text-align:center;
+                background:var(--accent); color:#fff; cursor:default;
+                font-size:10.5px; letter-spacing:.16em; font-weight:700;
+                border-bottom:0; border-left:1px solid rgba(255,255,255,.28); z-index:1}
+  #groupHead th:first-child{border-left:0}
+  #groupHead th:hover{color:#fff}
+  th.sorted{background:var(--accent); color:#fff;
             border-bottom-color:var(--accent)}
   th.sorted:hover{color:#fff}
-  th.sorted::after{content:" ▼"; font-size:10px; margin-left:3px}
+  th.sorted::after{content:" ▼"; font-size:9px; margin-left:3px}
   th.sorted.asc::after{content:" ▲"}
   td.txt,th.txt{text-align:left}
   /* Keep code and name in view while scrolling right through 24 columns --
      without this the numbers lose their label on any narrow screen. */
-  #tbl th:nth-child(1),#tbl td:nth-child(1){position:sticky; left:0; z-index:3}
-  #tbl th:nth-child(2),#tbl td:nth-child(2){position:sticky; left:62px; z-index:3}
+  #head th:nth-child(1),#tbl td:nth-child(1){position:sticky; left:0; z-index:3}
+  #head th:nth-child(2),#tbl td:nth-child(2){position:sticky; left:62px; z-index:3}
   #tbl td:nth-child(1),#tbl td:nth-child(2){background:var(--panel)}
-  #tbl th:nth-child(1),#tbl th:nth-child(2){z-index:4}
-  #tbl tbody tr:hover td:nth-child(1),#tbl tbody tr:hover td:nth-child(2){background:#faf8f4}
-  #tbl th:nth-child(2)::after{content:''; position:absolute; top:0; right:0; bottom:0;
-                              width:1px; background:var(--line)}
+  #head th:nth-child(1),#head th:nth-child(2){z-index:4}
+  #tbl tbody tr:hover td:nth-child(1),#tbl tbody tr:hover td:nth-child(2){background:#f4f8fc}
+  #head th:nth-child(2)::after,#tbl td:nth-child(2)::after{
+    content:''; position:absolute; top:0; right:0; bottom:0;
+    width:1px; background:var(--line)}
+  #tbl td:nth-child(2){position:sticky}
   /* Skip layout and paint for rows scrolled out of view. With ~2000 rows this
      is what keeps a re-sort from blocking for half a second. */
   tbody tr{content-visibility:auto; contain-intrinsic-size:0 32px}
@@ -167,8 +203,8 @@
 <div class="wrap">
 
 <header>
-  <h1>台股選股工具</h1>
-  <div class="meta" id="meta"></div>
+  <h1>台股<span>選股</span>工具</h1>
+  <div class="stats" id="stats"></div>
 </header>
 
 <div class="card">
@@ -195,6 +231,7 @@
     </label>
   </div>
   <div class="grid" id="filters">
+    <div class="sec">範圍</div>
     <div class="field"><label data-help="industry">產業別（可複選）</label>
       <div class="multi">
         <button type="button" id="indBtn" aria-expanded="false">全部產業</button>
@@ -210,12 +247,14 @@
         </div>
       </div>
     </div>
+    <div class="sec">估值</div>
     <div class="field"><label data-help="per">本益比 P/E</label><div class="pair">
       <input type="number" id="perMin" step="0.1" placeholder="最低"><span>～</span>
       <input type="number" id="perMax" step="0.1" placeholder="最高"></div></div>
     <div class="field"><label data-help="pbr">股價淨值比 P/B</label><div class="pair">
       <input type="number" id="pbrMin" step="0.1" placeholder="最低"><span>～</span>
       <input type="number" id="pbrMax" step="0.1" placeholder="最高"></div></div>
+    <div class="sec">配息</div>
     <div class="field"><label data-help="yield_pct">殖利率 %</label><div class="pair">
       <input type="number" id="ydMin" step="0.1" placeholder="最低"><span>～</span>
       <input type="number" id="ydMax" step="0.1" placeholder="最高"></div></div>
@@ -225,6 +264,7 @@
       <input type="number" id="payoutMax" step="5" placeholder="至多"><span>%</span></div></div>
     <div class="field"><label data-help="eps">EPS 累計（元）</label><div class="pair">
       <input type="number" id="epsMin" step="0.1" placeholder="至少"><span>元</span></div></div>
+    <div class="sec">成長與體質</div>
     <div class="field"><label data-help="rev_yoy">月營收年增率 %</label><div class="pair">
       <input type="number" id="yoyMin" step="1" placeholder="至少"><span>%</span></div></div>
     <div class="field"><label data-help="roe">ROE 累計 %</label><div class="pair">
@@ -233,6 +273,7 @@
       <input type="number" id="debtMax" step="5" placeholder="至多"><span>%</span></div></div>
     <div class="field"><label data-help="gross_margin">毛利率 %</label><div class="pair">
       <input type="number" id="gmMin" step="1" placeholder="至少"><span>%</span></div></div>
+    <div class="sec">股價與流動性</div>
     <div class="field"><label data-help="close">股價（元）</label><div class="pair">
       <input type="number" id="pxMin" step="1" placeholder="最低"><span>～</span>
       <input type="number" id="pxMax" step="1" placeholder="最高"></div></div>
@@ -259,7 +300,7 @@
 
 <div class="tablebox">
   <table id="tbl">
-    <thead><tr id="head"></tr></thead>
+    <thead><tr id="groupHead"></tr><tr id="head"></tr></thead>
     <tbody id="body"></tbody>
   </table>
   <div class="empty" id="empty" style="display:none">沒有符合條件的股票，把條件放寬一點。</div>
@@ -298,31 +339,40 @@ const rows = DATA.rows.map(values => {
   return o;
 });
 
+/* Ordered so related columns sit together; `g` drives the banding and the
+   legend above the table, which is what makes 24 columns scannable. */
 const COLS = [
-  {k:'code',   t:'代號',    txt:true},
-  {k:'name',   t:'名稱',    txt:true},
-  {k:'market', t:'市場',    txt:true, render:v=>`<span class="tag ${v==='上市'?'twse':'otc'}">${v}</span>`},
-  {k:'industry', t:'產業別', txt:true},
-  {k:'close',  t:'收盤價',  d:2},
-  {k:'change_pct', t:'漲跌幅%', d:2, signed:true},
-  {k:'per',    t:'本益比',  d:2},
-  {k:'pbr',    t:'淨值比',  d:2},
-  {k:'yield_pct', t:'殖利率%', d:2},
-  {k:'cash_div',  t:'現金股利', d:2},
-  {k:'payout',    t:'配息率%', d:0, warnOver:100},
-  {k:'div_streak',t:'連續配息', d:0, suffix:'年'},
-  {k:'div_years', t:'配息年數', d:0},
-  {k:'rev_yoy',     t:'月營收YoY%', d:1, signed:true},
-  {k:'rev_cum_yoy', t:'累計營收YoY%', d:1, signed:true},
-  {k:'eps_ttm',t:'EPS近四季', d:2},
-  {k:'eps',    t:'EPS累計', d:2},
-  {k:'roe',        t:'ROE累計%', d:1},
-  {k:'debt_ratio', t:'負債比%', d:1},
-  {k:'gross_margin', t:'毛利率%', d:1},
-  {k:'op_margin',    t:'營益率%', d:1},
-  {k:'net_margin',   t:'淨利率%', d:1},
-  {k:'book_value',   t:'每股淨值', d:2},
-  {k:'volume_lots',  t:'成交量(張)', d:0},
+  {g:'基本', k:'code',   t:'代號',    txt:true, mono:true},
+  {g:'基本', k:'name',   t:'名稱',    txt:true},
+  {g:'基本', k:'market', t:'市場',    txt:true, render:v=>`<span class="tag ${v==='上市'?'twse':'otc'}">${v}</span>`},
+  {g:'基本', k:'industry', t:'產業別', txt:true},
+
+  {g:'股價', k:'close',  t:'收盤價',  d:2},
+  {g:'股價', k:'change_pct', t:'漲跌幅%', d:2, signed:true},
+
+  {g:'估值', k:'per',    t:'本益比',  d:2},
+  {g:'估值', k:'pbr',    t:'淨值比',  d:2},
+
+  {g:'配息', k:'yield_pct', t:'殖利率%', d:2},
+  {g:'配息', k:'cash_div',  t:'現金股利', d:2},
+  {g:'配息', k:'payout',    t:'配息率%', d:0, warnOver:100},
+  {g:'配息', k:'div_streak',t:'連續配息', d:0, suffix:'年'},
+  {g:'配息', k:'div_years', t:'配息年數', d:0},
+
+  {g:'成長', k:'rev_yoy',     t:'月營收YoY%', d:1, signed:true},
+  {g:'成長', k:'rev_cum_yoy', t:'累計營收YoY%', d:1, signed:true},
+
+  {g:'獲利', k:'eps_ttm',t:'EPS近四季', d:2},
+  {g:'獲利', k:'eps',    t:'EPS累計', d:2},
+  {g:'獲利', k:'gross_margin', t:'毛利率%', d:1},
+  {g:'獲利', k:'op_margin',    t:'營益率%', d:1},
+  {g:'獲利', k:'net_margin',   t:'淨利率%', d:1},
+
+  {g:'體質', k:'roe',        t:'ROE累計%', d:1},
+  {g:'體質', k:'debt_ratio', t:'負債比%', d:1, warnOver:70},
+  {g:'體質', k:'book_value', t:'每股淨值', d:2},
+
+  {g:'量能', k:'volume_lots',  t:'成交量(張)', d:0},
 ];
 
 const PRESETS = {
@@ -416,9 +466,13 @@ let rowLimit = DEFAULT_ROW_LIMIT;
 let sortKey = 'yield_pct', sortAsc = false, view = [];
 
 /* ---------- header ---------- */
-$('meta').innerHTML =
-  `資料日期 <b>${meta.data_date || '未知'}</b> ・ 產生時間 <b>${meta.generated_at}</b> ・ ` +
-  `收錄 <b>${meta.total}</b> 檔普通股（上市 ${meta.listed} ／ 上櫃 ${meta.otc}）`;
+$('stats').innerHTML = [
+  ['資料日期', meta.data_date || '未知'],
+  ['普通股', meta.total.toLocaleString('zh-TW')],
+  ['上市', meta.listed.toLocaleString('zh-TW')],
+  ['上櫃', meta.otc.toLocaleString('zh-TW')],
+  ['更新於', meta.generated_at],
+].map(([k, v]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
 $('warn').innerHTML = meta.history_span
   ? `「連續配息年數」統計區間為 <b>${meta.history_from}–${meta.history_to} 年</b>，` +
     `僅涵蓋上市股票；上櫃股票該欄為「—」表示無資料，並非沒有配息。`
@@ -549,6 +603,36 @@ document.querySelectorAll('[data-help]').forEach(el => {
 });
 window.addEventListener('scroll', hideTip, true);
 
+/* ---------- column groups ----------
+   Banding is emitted as nth-child rules once, rather than a class on every
+   cell, so grouping costs nothing per row. */
+const GROUPS = [];
+COLS.forEach((c, i) => {
+  const last = GROUPS[GROUPS.length - 1];
+  if (last && last.name === c.g) { last.n++; last.end = i; }
+  else GROUPS.push({name: c.g, n: 1, start: i, end: i, band: GROUPS.length % 2 === 1});
+});
+
+$('groupHead').innerHTML = GROUPS.map(g =>
+  `<th colspan="${g.n}">${g.name}</th>`).join('');
+
+(() => {
+  const rules = [];
+  GROUPS.forEach(g => {
+    const cells = [];
+    for (let i = g.start; i <= g.end; i++)
+      cells.push(`#tbl td:nth-child(${i + 1})`);
+    // Bands skip the first group: those columns are frozen and must stay opaque.
+    if (g.band && cells.length) rules.push(`${cells.join(',')}{background:var(--band)}`);
+    // A rule at each group's first column reads as a seam between sections.
+    rules.push(`#head th:nth-child(${g.start + 1}),#tbl td:nth-child(${g.start + 1})` +
+               `{border-left:1px solid var(--line)}`);
+  });
+  const st = document.createElement('style');
+  st.textContent = rules.join('\n');
+  document.head.appendChild(st);
+})();
+
 /* ---------- table head ---------- */
 $('head').innerHTML = COLS.map(c => {
   const tip = TIPS[c.k] ? ` data-tip="${TIPS[c.k].replace(/"/g, '&quot;')}"` : '';
@@ -675,7 +759,8 @@ function render(){
   const shown = view.slice(0, rowLimit);
   $('body').innerHTML = shown.map(r =>
     '<tr>' + COLS.map(c =>
-      `<td class="${c.txt?'txt':''}">${fmt(r[c.k], c)}</td>`).join('') + '</tr>').join('');
+      `<td class="${c.txt ? 'txt' : ''}${c.mono ? ' mono' : ''}">${fmt(r[c.k], c)}</td>`
+    ).join('') + '</tr>').join('');
   $('empty').style.display = view.length ? 'none' : 'block';
   $('hits').textContent = view.length;
   const capped = view.length > rowLimit;
