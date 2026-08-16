@@ -49,7 +49,13 @@ jobs:
           python - <<'PY'
           import json, re, sys
           html = open('output/artifact.html', encoding='utf-8').read()
-          meta = json.loads(re.search(r'"meta":(\{.*?\}),"rows"', html).group(1))
+          # meta holds only scalars, so match to its own closing brace rather
+          # than assuming which key follows it -- the payload layout has changed
+          # once already and quietly broke this check.
+          m = re.search(r'"meta":(\{[^{}]*\})', html)
+          if not m:
+              sys.exit("找不到 meta 區塊，頁面格式可能已變更。")
+          meta = json.loads(m.group(1))
           listed, otc = meta['listed'], meta['otc']
           print(f"資料日期 {meta['data_date']}  上市 {listed}  上櫃 {otc}")
           if listed < 900 or otc < 700:
