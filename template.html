@@ -23,7 +23,7 @@
     /* Semantic colours, deliberately outside the accent family.
        Taiwan convention: red is up, green is down. */
     --up:#c62828; --down:#0d7a52; --warn:#9a6700; --warn-soft:#fdf3e0;
-    --band:#f4f7fd;
+    --band:#f4f7fd; --databar:#d7e5ff;
   }
   *{box-sizing:border-box}
   body{
@@ -39,10 +39,16 @@
          padding-bottom:14px; border-bottom:2px solid var(--accent)}
   header h1{font-size:21px; margin:0; letter-spacing:.02em; font-weight:700}
   header h1 span{color:var(--accent)}
-  .stats{display:flex; flex-wrap:wrap; gap:0 26px; margin-left:auto}
-  .stat{display:flex; flex-direction:column; line-height:1.25}
-  .stat .k{font-size:11px; color:var(--muted); letter-spacing:.08em}
-  .stat .v{font-size:15px; font-weight:600; font-variant-numeric:tabular-nums}
+  .stats{display:flex; flex-wrap:wrap; gap:8px; margin-left:auto}
+  .stat{display:flex; flex-direction:column; line-height:1.2; gap:2px;
+        padding:7px 14px; background:var(--panel); border:1px solid var(--line);
+        border-radius:6px; min-width:82px}
+  .stat.lead{background:var(--accent-soft); border-color:#b9d0ff}
+  .stat .k{font-size:10.5px; color:var(--muted); letter-spacing:.09em}
+  /* Proportional figures: equal-width digits make a standalone number look
+     loose. tabular-nums belongs in the table, where digits stack. */
+  .stat .v{font-size:19px; font-weight:700; letter-spacing:-.01em}
+  .stat.lead .v{color:var(--accent-ink)}
 
   .card{background:var(--panel); border:1px solid var(--line); border-radius:6px;
         padding:15px 17px; margin-top:14px}
@@ -144,12 +150,36 @@
     white-space:normal; text-align:left; pointer-events:none;
   }
   th[data-tip]{text-decoration:underline dotted rgba(0,0,0,.25); text-underline-offset:3px}
-  .dist{margin-top:8px; font-size:13px; color:var(--muted); display:flex;
-        flex-wrap:wrap; gap:6px 10px; align-items:center}
-  .dist .chip{background:var(--accent-soft); color:var(--accent-ink); border-radius:12px;
-              padding:2px 10px; cursor:pointer}
-  .dist .chip:hover{text-decoration:underline}
-  .dist .flag{background:#fdf1ef; color:#a2372e; border-radius:12px; padding:2px 10px}
+  /* Industry mix of the current result set. One series, so one colour: shading
+     bars by their own length would encode the same thing twice. */
+  .dist{display:grid; grid-template-columns:7.5em 1fr 3.6em; gap:3px 10px;
+        align-items:center; font-size:12.5px}
+  .dist .row{display:contents; cursor:pointer}
+  .dist .lbl{color:var(--ink); text-align:right; white-space:nowrap;
+             overflow:hidden; text-overflow:ellipsis}
+  .dist .track{height:9px; background:var(--line-soft); border-radius:2px}
+  .dist .fill{height:100%; background:var(--accent); border-radius:2px 4px 4px 2px;
+              min-width:2px; transition:width .18s ease}
+  .dist .val{color:var(--muted); font-variant-numeric:tabular-nums; font-size:12px}
+  .dist .row:hover .lbl{color:var(--accent-ink); font-weight:600}
+  .dist .row:hover .fill{background:var(--accent-ink)}
+  .dist .row.on .lbl{color:var(--accent-ink); font-weight:700}
+  .distflag{margin-top:10px; font-size:12.5px; background:var(--warn-soft);
+            color:var(--warn); border-radius:4px; padding:6px 11px;
+            border-left:3px solid var(--warn)}
+  .distflag:empty{display:none}
+  /* Narrow screens: a fixed label column ellipsises names like 電腦及週邊設備業,
+     so give the label its own line and let the bar span the full width. */
+  @media (max-width:560px){
+    .dist{grid-template-columns:1fr auto; gap:2px 8px}
+    .dist .lbl{text-align:left; grid-column:1}
+    .dist .val{grid-column:2; text-align:right}
+    .dist .track{grid-column:1/-1; margin-bottom:7px}
+  }
+  /* A bar behind the column being sorted, so the spread of the metric you are
+     actually ranking by is visible without reading every number. */
+  #tbl td.bar{background-image:linear-gradient(to right,
+              var(--databar) 0 var(--w), transparent var(--w))}
 
   .tablebox{margin-top:10px; border:1px solid var(--line); border-radius:6px;
             overflow:auto; max-height:72vh; background:var(--panel)}
@@ -181,7 +211,7 @@
      without this the numbers lose their label on any narrow screen. */
   #head th:nth-child(1),#tbl td:nth-child(1){position:sticky; left:0; z-index:3}
   #head th:nth-child(2),#tbl td:nth-child(2){position:sticky; left:62px; z-index:3}
-  #tbl td:nth-child(1),#tbl td:nth-child(2){background:var(--panel)}
+  #tbl td:nth-child(1),#tbl td:nth-child(2){background-color:var(--panel)}
   #head th:nth-child(1),#head th:nth-child(2){z-index:4}
   #tbl tbody tr:hover td:nth-child(1),#tbl tbody tr:hover td:nth-child(2){background:#f4f8fc}
   #head th:nth-child(2)::after,#tbl td:nth-child(2)::after{
@@ -304,7 +334,11 @@
   </div>
 </div>
 
-<div id="dist" class="dist"></div>
+<div class="card">
+  <h2>目前結果的產業分布</h2>
+  <div id="dist" class="dist"></div>
+  <div id="distFlag" class="distflag"></div>
+</div>
 
 <div class="tablebox">
   <table id="tbl">
@@ -475,12 +509,13 @@ let sortKey = 'yield_pct', sortAsc = false, view = [];
 
 /* ---------- header ---------- */
 $('stats').innerHTML = [
-  ['資料日期', meta.data_date || '未知'],
+  ['資料日期', meta.data_date || '未知', true],
   ['普通股', meta.total.toLocaleString('zh-TW')],
   ['上市', meta.listed.toLocaleString('zh-TW')],
   ['上櫃', meta.otc.toLocaleString('zh-TW')],
-  ['更新於', meta.generated_at],
-].map(([k, v]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+].map(([k, v, lead]) =>
+  `<div class="stat${lead ? ' lead' : ''}"><span class="k">${k}</span>` +
+  `<span class="v">${v}</span></div>`).join('');
 $('warn').innerHTML = meta.history_span
   ? `「連續配息年數」統計區間為 <b>${meta.history_from}–${meta.history_to} 年</b>，` +
     `僅涵蓋上市股票；上櫃股票該欄為「—」表示無資料，並非沒有配息。`
@@ -631,7 +666,9 @@ $('groupHead').innerHTML = GROUPS.map(g =>
     for (let i = g.start; i <= g.end; i++)
       cells.push(`#tbl td:nth-child(${i + 1})`);
     // Bands skip the first group: those columns are frozen and must stay opaque.
-    if (g.band && cells.length) rules.push(`${cells.join(',')}{background:var(--band)}`);
+    // background-color, not the shorthand: the data bar rides in as a
+    // background-image and the shorthand would wipe it out.
+    if (g.band && cells.length) rules.push(`${cells.join(',')}{background-color:var(--band)}`);
     // A rule at each group's first column reads as a seam between sections.
     rules.push(`#head th:nth-child(${g.start + 1}),#tbl td:nth-child(${g.start + 1})` +
                `{border-left:1px solid var(--line)}`);
@@ -716,28 +753,56 @@ function fmt(v, c){
 }
 
 /* Industry mix of the current result set, plus a payout-ratio warning. */
+const DIST_ROWS = 8;
+
 function distribution(){
-  if (!view.length){ $('dist').innerHTML = ''; return; }
+  const box = $('dist');
+  if (!view.length){ box.innerHTML = ''; $('distFlag').innerHTML = ''; return; }
+
   const tally = {};
   view.forEach(r => { const k = r.industry || '未分類'; tally[k] = (tally[k]||0) + 1; });
-  const top = Object.entries(tally).sort((a,b) => b[1]-a[1]).slice(0, 4);
-  let html = '<span>產業分布：</span>' + top.map(([name, n]) =>
-    `<span class="chip" data-ind="${name}">${name} ${n} 檔（${Math.round(n/view.length*100)}%）</span>`
-  ).join('');
-  const over = view.filter(r => r.payout !== null && r.payout > 100).length;
-  if (over) html += `<span class="flag">配息率 &gt; 100%：${over} 檔（配息超過近四季獲利）</span>`;
-  $('dist').innerHTML = html;
-  // Clicking a chip drills into that industry; clicking it again backs out.
-  $('dist').querySelectorAll('.chip').forEach(c => c.onclick = () => {
-    const name = c.dataset.ind;
-    const only = picked.size === 1 && picked.has(name) && !$('indExclude').checked;
-    picked.clear();
-    if (!only) picked.add(name);
-    $('indExclude').checked = false;
-    if (!$('indPanel').hidden) drawIndList();
-    syncInd();
-    apply();
+  const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+  const top = sorted.slice(0, DIST_ROWS);
+  const restN = sorted.slice(DIST_ROWS).reduce((s, [, n]) => s + n, 0);
+  // Scaled against the largest slice, not the total: across 34 industries every
+  // bar would otherwise be a sliver.
+  const max = top[0][1];
+  const pct = n => Math.round(n / view.length * 100);
+
+  const row = (name, n, clickable) =>
+    `<div class="row${picked.size === 1 && picked.has(name) ? ' on' : ''}"` +
+    `${clickable ? ` data-ind="${name}"` : ''}` +
+    ` data-tip="${name}：${n} 檔，占目前結果 ${pct(n)}%` +
+    `${clickable ? '。點一下只看這個產業，再點一次退回' : ''}">` +
+    `<span class="lbl">${name}</span>` +
+    `<span class="track"><span class="fill" style="width:${Math.max(n / max * 100, 1)}%"></span></span>` +
+    `<span class="val">${n} <small>${pct(n)}%</small></span></div>`;
+
+  box.innerHTML = top.map(([name, n]) => row(name, n, true)).join('') +
+    // "其他" is itself one of the exchange's industry names, so the aggregate
+    // row must not be called that.
+    (restN ? row(`其餘 ${sorted.length - DIST_ROWS} 類合計`, restN, false) : '');
+
+  // Clicking a bar drills into that industry; clicking it again backs out.
+  box.querySelectorAll('.row[data-ind]').forEach(el => {
+    bindTip(el);
+    el.onclick = () => {
+      const name = el.dataset.ind;
+      const only = picked.size === 1 && picked.has(name) && !$('indExclude').checked;
+      picked.clear();
+      if (!only) picked.add(name);
+      $('indExclude').checked = false;
+      if (!$('indPanel').hidden) drawIndList();
+      syncInd();
+      apply();
+    };
   });
+
+  const over = view.filter(r => r.payout !== null && r.payout > 100).length;
+  $('distFlag').innerHTML = over
+    ? `配息率超過 100%：<b>${over}</b> 檔。這些公司配出去的錢多於近四季賺到的，` +
+      `差額來自過去累積的盈餘，該配息水準通常無法持續。`
+    : '';
 }
 
 function render(){
@@ -764,11 +829,30 @@ function render(){
   $('sortState').innerHTML =
     `依 ${col ? col.t : sortKey} ${dirText}<span class="arrow">${sortAsc ? '▲' : '▼'}</span>`;
 
+  // Data bars only when nothing in view is negative: a left-anchored bar for a
+  // negative number would draw magnitude that is not there.
+  const sortCol = COLS.find(c => c.k === sortKey);
+  let barMax = null;
+  if (sortCol && !sortCol.txt){
+    let min = Infinity, max = -Infinity;
+    for (const r of view){
+      const v = r[sortKey];
+      if (typeof v !== 'number') continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (min >= 0 && max > 0) barMax = max;
+  }
+
   const shown = view.slice(0, rowLimit);
   $('body').innerHTML = shown.map(r =>
-    '<tr>' + COLS.map(c =>
-      `<td class="${c.txt ? 'txt' : ''}${c.mono ? ' mono' : ''}">${fmt(r[c.k], c)}</td>`
-    ).join('') + '</tr>').join('');
+    '<tr>' + COLS.map(c => {
+      const v = r[c.k];
+      const bar = barMax && c.k === sortKey && typeof v === 'number';
+      return `<td class="${c.txt ? 'txt' : ''}${c.mono ? ' mono' : ''}${bar ? ' bar' : ''}"` +
+             `${bar ? ` style="--w:${(v / barMax * 100).toFixed(1)}%"` : ''}>` +
+             `${fmt(v, c)}</td>`;
+    }).join('') + '</tr>').join('');
   $('empty').style.display = view.length ? 'none' : 'block';
   $('hits').textContent = view.length;
   const capped = view.length > rowLimit;
@@ -950,6 +1034,9 @@ $('showAll').onclick = () => { rowLimit = Infinity; render(); };
 $('sortState').onclick = () => { sortAsc = !sortAsc; render(); };
 $('sortState').dataset.tip =
   '目前的排序方式，點一下可反轉方向；也可以直接點表格的欄位標題改排序欄位。'
+  + '排序中的那一欄，儲存格會有一條長度代表數值大小的底色橫條，'
+  + '方便一眼看出分布——但只在該欄目前沒有負值時才畫，'
+  + '否則從左邊起算的長條會顯示出不存在的大小關係。'
   + '沒有資料的股票（例如虧損公司沒有本益比）不論方向一律排在最後，'
   + '避免空白被當成 0 而衝到最前面。';
 bindTip($('sortState'));
