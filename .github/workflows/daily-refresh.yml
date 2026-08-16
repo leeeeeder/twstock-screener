@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: daily-refresh
@@ -67,3 +69,25 @@ jobs:
             git pull --rebase --autostash origin main
             git push
           fi
+
+      # index.html is the complete standalone document; artifact.html is a body
+      # fragment that only works inside the Artifact wrapper, so never serve it.
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp output/index.html _site/index.html
+          cp output/twstock_*.csv _site/twstock_latest.csv
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: refresh
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

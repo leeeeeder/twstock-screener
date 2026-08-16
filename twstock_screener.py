@@ -581,9 +581,13 @@ def main() -> int:
     # Deliberately not date-stamped: republishing the same file path updates the
     # existing artifact in place, so a shared link keeps working after a refresh.
     artifact_path = os.path.join(OUTPUT_DIR, "artifact.html")
+    # The GitHub Pages entry point. This is the COMPLETE document -- artifact.html
+    # is a body fragment that only works inside the Artifact wrapper.
+    index_path = os.path.join(OUTPUT_DIR, "index.html")
     html = render_html(records, meta, os.path.join(BASE_DIR, "template.html"))
     write_csv(csv_path, records)
     write_html(html_path, html)
+    write_html(index_path, html)
     write_artifact_html(artifact_path, html)
 
     log("\n完成。")
