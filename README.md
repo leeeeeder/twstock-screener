@@ -129,6 +129,24 @@ GitHub-hosted runner 則沒有這個限制。所以抓資料放 Actions，發布
 以及一道預防：`fetch_json()` 對同一主機強制間隔 1.5 秒，重試退避 5／10／15 秒。
 整趟約多花 15 秒，換掉整個失敗模式。
 
+### 分享方式決定訪客會不會拿到新資料
+
+分享對話框裡的「Shared version」有兩種狀態，而它跟「General access」是互斥的：
+
+| General access | Shared version | 結果 |
+|---|---|---|
+| Anyone with the link | 只能釘選特定版本 | 訪客永遠停在你按分享當下那一版，每次更新要手動把釘選往前移 |
+| 限定特定人（email 邀請） | 可選 **Latest** | 訪客自動看到每天發布的最新版，完全不用管 |
+
+想改成 Latest 但 access 還是公開時，介面會擋下來並顯示
+「Can't switch to Latest while shared publicly. Change who has access first.」
+
+這是平台刻意的設計：公開連結的內容不該在訪客不知情的情況下被替換掉。
+
+**所以要讓自動更新真的傳達到訪客，必須用「限定特定人 + Latest」。** 若選擇公開連結，
+自動更新仍然照跑、你自己開網址也看得到新資料，但訪客會停在釘選的版本，
+而且**不會有任何錯誤提示**——這是最容易誤以為一切正常的地方。
+
 ### 為什麼分享版不能匯出 CSV
 
 **宣告任何執行期能力（capability）的 artifact 都不能被公開分享**，`downloads` 也算。
