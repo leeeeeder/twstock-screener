@@ -62,13 +62,13 @@ jobs:
               sys.exit(f"市場資料不完整（上市 {listed} / 上櫃 {otc}），不予提交。")
           PY
 
-      - name: Commit the refreshed artifact
+      - name: Commit the accumulated dividend history
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f output/artifact.html
-          # TPEx only ever serves the current day's ex-dividend rows, so this
-          # accumulated file is the only copy that will ever exist.
+          # The only file worth keeping: TPEx serves just the current day's
+          # ex-dividend rows, so this accumulation is the sole copy that will
+          # ever exist. The pages themselves are rebuilt from source each run.
           git add data/tpex_exright_history.json
           if git diff --staged --quiet; then
             echo "Nothing changed."
