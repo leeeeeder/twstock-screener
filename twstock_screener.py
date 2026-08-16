@@ -72,6 +72,14 @@ TPEX_INDUSTRY = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap14_O"
 TWSE_BASIC = "https://openapi.twse.com.tw/v1/opendata/t187ap03_L"
 TPEX_BASIC = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O"
 
+# TPEx publishes only the current day's ex-dividend results, and no multi-year
+# equivalent of TWSE's TWT49U exists: mopsfin_t187ap39_O stopped at ROC 110 and
+# every dated query on the old and new sites ignores the date. So each run folds
+# today's rows into a history file kept in the repo, and the record grows from
+# the day tracking started rather than reaching backwards.
+TPEX_EXRIGHT_TODAY = "https://www.tpex.org.tw/openapi/v1/tpex_exright_daily"
+HISTORY_PATH = os.path.join(BASE_DIR, "data", "tpex_exright_history.json")
+
 TPEX_VALUATION = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis"
 TPEX_QUOTES = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes"
 # The "A" variants carry Chinese field names and stay current; the plain
@@ -83,6 +91,26 @@ TPEX_INCOME = [
     "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap06_O_fhA",
     "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap06_O_insA",
     "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap06_O_bdA",
+]
+
+# Monthly revenue. The exchanges publish the year-on-year change themselves, so
+# it is read rather than recomputed -- no second opinion on the denominator.
+TWSE_REVENUE = "https://openapi.twse.com.tw/v1/opendata/t187ap05_L"
+TPEX_REVENUE = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap05_O"
+
+# Balance sheets, for debt ratio and ROE. Only the _ci (general industry) files
+# are substantial -- 967 and 857 rows. The other five carry a handful of rows
+# each, sometimes without 資產總計/權益總計 at all and with the company code under
+# an English key, so every field here is read defensively. Financial holdings,
+# banks and insurers therefore end up without these ratios, the same gap they
+# already have for 毛利率.
+TWSE_BALANCE = [
+    f"https://openapi.twse.com.tw/v1/opendata/t187ap07_L_{v}"
+    for v in ("ci", "mim", "basi", "fh", "ins", "bd")
+]
+TPEX_BALANCE = [
+    f"https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap07_O_{v}"
+    for v in ("ci", "mim", "basi", "fh", "ins", "bd")
 ]
 
 
@@ -260,6 +288,76 @@ def load_quotes(stocks: dict, use_cache: bool) -> None:
             rec["cash_div"] = round(close * rec["yield_pct"] / 100, 2)
 
 
+def load_revenue(stocks: dict, use_cache: bool) -> None:
+    """Monthly revenue and its year-on-year change, as published."""
+    log("→ 月營收年增率 …")
+    matched = 0
+    for key, url in [("twse_revenue", TWSE_REVENUE), ("tpex_revenue", TPEX_REVENUE)]:
+        for row in fetch_json(url, key, use_cache) or []:
+            code = row_code(row)
+            if code not in stocks:
+                continue
+            rec = stocks[code]
+            # Published at full float precision (1.5379365538929763); round it.
+            yoy = to_float(pick(row, "營業收入", "去年同月增減"))
+            cum = to_float(pick(row, "累計營業收入", "前期比較增減"))
+            rec["rev_yoy"] = round(yoy, 2) if yoy is not None else None
+            rec["rev_cum_yoy"] = round(cum, 2) if cum is not None else None
+            month = str(row.get("資料年月") or "").strip()
+            rec["rev_month"] = f"{month[:3]}/{month[3:]}" if len(month) == 5 else month
+            matched += 1
+    log(f"  對應到 {matched} 檔")
+
+
+def load_balance(stocks: dict, use_cache: bool) -> None:
+    """Balance sheet totals, for the debt ratio and ROE."""
+    log("→ 資產負債表（負債比／ROE）…")
+    matched = 0
+    sources = [("twse_balance", TWSE_BALANCE), ("tpex_balance", TPEX_BALANCE)]
+    for prefix, urls in sources:
+        for url in urls:
+            key = f"{prefix}_{url.rsplit('_', 1)[-1]}"
+            for row in fetch_json(url, key, use_cache) or []:
+                code = row_code(row)
+                if code not in stocks:
+                    continue
+                rec = stocks[code]
+                # Several of these files omit the totals entirely; keep whatever
+                # is there and let compute_ratios() skip the incomplete ones.
+                assets = to_float(row.get("資產總計"))
+                debt = to_float(row.get("負債總計"))
+                equity = to_float(row.get("權益總計"))
+                book = to_float(row.get("每股參考淨值"))
+                if assets is not None:
+                    rec["assets"] = assets
+                if debt is not None:
+                    rec["debt"] = debt
+                if equity is not None:
+                    rec["equity"] = equity
+                if book is not None:
+                    rec["book_value"] = book
+                matched += 1
+    log(f"  對應到 {matched} 檔")
+
+
+def compute_ratios(stocks: dict) -> None:
+    """
+    Debt ratio and cumulative ROE.
+
+    ROE uses 本期淨利 from the income statement, which is a year-to-date figure
+    (115Q2 means the first half only). It is deliberately NOT annualised: for a
+    cyclical company doubling a half-year profit is badly misleading. The column
+    is labelled 累計 so the period is read off the 財報期別 column.
+    """
+    for rec in stocks.values():
+        assets, debt = rec["assets"], rec["debt"]
+        if assets and debt is not None:
+            rec["debt_ratio"] = round(debt / assets * 100, 1)
+        equity, profit = rec["equity"], rec["net_income"]
+        if equity and profit is not None:
+            rec["roe"] = round(profit / equity * 100, 1)
+
+
 def load_income(stocks: dict, use_cache: bool) -> None:
     """Latest cumulative income statement: EPS, revenue, gross and net margin."""
     log("→ 綜合損益表（EPS／毛利率／淨利率）…")
@@ -282,6 +380,7 @@ def load_income(stocks: dict, use_cache: bool) -> None:
                 gross = to_float(pick(row, "營業毛利"))
                 net = to_float(pick(row, "本期淨利"))
                 rec["revenue"] = revenue
+                rec["net_income"] = net      # kept raw so compute_ratios() can do ROE
                 if revenue and gross is not None:
                     rec["gross_margin"] = round(gross / revenue * 100, 2)
                 if revenue and net is not None:
@@ -371,13 +470,93 @@ def compute_payout(stocks: dict) -> None:
         rec["payout"] = round(div / eps_ttm * 100, 1)
 
 
+def accumulate_tpex_dividends(stocks: dict, use_cache: bool) -> dict:
+    """
+    Fold today's OTC ex-dividend rows into the repo's history file.
+
+    Returns the history. Streaks are only reported for calendar years the file
+    covers from start to finish -- a few months of records must never be dressed
+    up as a dividend record, which would be worse than the blank it replaces.
+    """
+    log("→ 上櫃除權息累積 …")
+    today = dt.date.today().isoformat()
+
+    history = {"tracking_since": today, "events": {}}
+    if os.path.exists(HISTORY_PATH):
+        try:
+            with open(HISTORY_PATH, "r", encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if isinstance(loaded.get("events"), dict):
+                history = loaded
+                history.setdefault("tracking_since", today)
+        except (OSError, json.JSONDecodeError) as exc:
+            log(f"  ! 歷史檔讀取失敗，改為重新開始: {exc}")
+
+    rows = fetch_json(TPEX_EXRIGHT_TODAY, "tpex_exright_today", use_cache) or []
+    added = 0
+    for row in rows:
+        code = str(row.get("SecuritiesCompanyCode", "")).strip()
+        if not is_common_stock(code):
+            continue
+        iso = roc_to_iso(row.get("Date"))
+        cash = to_float(row.get("CashDividend"))
+        if not iso or not cash:          # 權-only events pay no cash
+            continue
+        # Keyed by code+date so re-running the same day cannot double count.
+        key = f"{code}@{iso}"
+        if key not in history["events"]:
+            history["events"][key] = round(cash, 4)
+            added += 1
+
+    os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
+    with open(HISTORY_PATH, "w", encoding="utf-8") as fh:
+        json.dump(history, fh, ensure_ascii=False, indent=1, sort_keys=True)
+
+    # Only whole calendar years that started on or after tracking began can be
+    # trusted; anything earlier is a partial year we happened to catch the tail of.
+    since = history["tracking_since"]
+    first_full = int(since[:4]) + (0 if since[5:] == "01-01" else 1)
+    last_full = dt.date.today().year - 1
+    complete = list(range(first_full, last_full + 1))
+
+    paid: dict[str, set[int]] = {}
+    for key in history["events"]:
+        code, _, iso = key.partition("@")
+        paid.setdefault(code, set()).add(int(iso[:4]))
+
+    counted = 0
+    for code, rec in stocks.items():
+        if rec["market"] != "上櫃":
+            continue
+        rec["div_tracking"] = since
+        if not complete:
+            continue
+        years_paid = {y for y in paid.get(code, set()) if y in complete}
+        rec["div_years"] = len(years_paid)
+        streak = 0
+        cursor = last_full
+        while cursor in years_paid:
+            streak += 1
+            cursor -= 1
+        rec["div_streak"] = streak
+        counted += 1
+
+    log(f"  新增 {added} 筆，累計 {len(history['events'])} 筆，"
+        f"自 {since} 起追蹤")
+    if complete:
+        log(f"  可用的完整年度 {complete[0]}–{complete[-1]}，已為 {counted} 檔上櫃計算")
+    else:
+        log("  尚無完整年度，上櫃連續配息年數維持空白（僅標示追蹤起始日）")
+    return history
+
+
 def load_dividend_history(stocks: dict, years: int, use_cache: bool) -> dict:
     """
     Count cash-dividend years from the TWSE ex-dividend result table (TWT49U).
 
-    This table covers listed (上市) stocks only -- TPEx publishes no equivalent
-    multi-year open data, so OTC (上櫃) stocks keep div_years = None and the HTML
-    marks them as "資料不足" rather than pretending they never paid.
+    This table covers listed (上市) stocks only. OTC history is accumulated
+    separately by accumulate_tpex_dividends() because no multi-year TPEx source
+    exists.
     """
     this_year = dt.date.today().year
     year_range = list(range(this_year - years + 1, this_year + 1))
@@ -438,8 +617,13 @@ def new_stock(code: str, name: str, market: str) -> dict:
         "high": None, "low": None, "volume_lots": None, "turnover": None,
         "per": None, "pbr": None, "yield_pct": None, "cash_div": None,
         "eps": None, "eps_period": "", "eps_ttm": None, "payout": None,
-        "revenue": None, "gross_margin": None, "net_margin": None, "op_margin": None,
+        "revenue": None, "net_income": None,
+        "gross_margin": None, "net_margin": None, "op_margin": None,
+        "rev_yoy": None, "rev_cum_yoy": None, "rev_month": "",
+        "assets": None, "debt": None, "equity": None, "book_value": None,
+        "debt_ratio": None, "roe": None,
         "div_years": None, "div_streak": None, "last_div_year": None,
+        "div_tracking": "",
     }
 
 
@@ -452,9 +636,12 @@ CSV_COLUMNS = [
     ("per", "本益比"), ("pbr", "股價淨值比"), ("yield_pct", "殖利率%"),
     ("cash_div", "現金股利(元)"), ("payout", "配息率%"), ("eps_ttm", "EPS(近四季估)"),
     ("eps", "EPS(累計)"), ("eps_period", "財報期別"),
+    ("rev_yoy", "月營收年增率%"), ("rev_cum_yoy", "累計營收年增率%"),
+    ("rev_month", "營收月份"),
     ("gross_margin", "毛利率%"), ("op_margin", "營益率%"), ("net_margin", "淨利率%"),
+    ("roe", "ROE(累計)%"), ("debt_ratio", "負債比%"), ("book_value", "每股淨值"),
     ("div_streak", "連續配息年數"), ("div_years", "配息年數"),
-    ("last_div_year", "最近配息年"),
+    ("last_div_year", "最近配息年"), ("div_tracking", "配息追蹤起始"),
 ]
 
 
@@ -467,11 +654,29 @@ def write_csv(path: str, records: list) -> None:
                              for key, _ in CSV_COLUMNS])
 
 
+# Fields the page actually uses. Everything else stays in the CSV only: with
+# ~2000 rows, each field name is repeated 2000 times in the payload, so both the
+# column list and the row-as-array encoding below exist to keep the page small.
+PAGE_FIELDS = [
+    "code", "name", "market", "industry",
+    "close", "change_pct", "volume_lots",
+    "per", "pbr", "yield_pct", "cash_div", "payout", "eps_ttm",
+    "eps", "eps_period", "rev_yoy", "rev_cum_yoy", "rev_month",
+    "gross_margin", "op_margin", "net_margin", "roe", "debt_ratio", "book_value",
+    "div_streak", "div_years", "last_div_year", "div_tracking",
+]
+
+
 def render_html(records: list, meta: dict, template_path: str) -> str:
     with open(template_path, "r", encoding="utf-8") as fh:
         template = fh.read()
-    payload = json.dumps({"meta": meta, "rows": records}, ensure_ascii=False,
-                         separators=(",", ":"))
+    payload = json.dumps(
+        {
+            "meta": meta,
+            "fields": PAGE_FIELDS,
+            "rows": [[rec.get(f) for f in PAGE_FIELDS] for rec in records],
+        },
+        ensure_ascii=False, separators=(",", ":"))
     return template.replace("/*__DATA__*/null", payload)
 
 
@@ -556,11 +761,17 @@ def main() -> int:
 
     load_industry(stocks, use_cache)
     load_income(stocks, use_cache)
+    load_revenue(stocks, use_cache)
+    load_balance(stocks, use_cache)
     compute_payout(stocks)
+    compute_ratios(stocks)
 
     history = {"from": None, "to": None, "span": 0}
     if not args.skip_history:
         history = load_dividend_history(stocks, args.years, use_cache)
+    # Runs even with --skip-history: missing a day loses that day's records
+    # permanently, since TPEx only ever serves the current day.
+    accumulate_tpex_dividends(stocks, use_cache)
 
     records = sorted(stocks.values(), key=lambda r: r["code"])
     listed = sum(1 for r in records if r["market"] == "上市")

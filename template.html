@@ -63,6 +63,7 @@
   #sortState .arrow{font-size:10px; margin-left:3px}
   #ofTotal:not(:empty){background:#fdf1ef; color:#a2372e; font-size:12px;
                        border-radius:12px; padding:4px 10px}
+  #showAll{font-size:12px; padding:4px 11px; border-radius:12px}
   #exportNote{font-size:12.5px; color:var(--muted); max-width:340px; text-align:right}
   #exportNote.ok{color:var(--accent)}
   #exportNote.err{color:var(--up)}
@@ -134,6 +135,18 @@
   th.sorted::after{content:" ▼"; font-size:10px; margin-left:3px}
   th.sorted.asc::after{content:" ▲"}
   td.txt,th.txt{text-align:left}
+  /* Keep code and name in view while scrolling right through 24 columns --
+     without this the numbers lose their label on any narrow screen. */
+  #tbl th:nth-child(1),#tbl td:nth-child(1){position:sticky; left:0; z-index:3}
+  #tbl th:nth-child(2),#tbl td:nth-child(2){position:sticky; left:62px; z-index:3}
+  #tbl td:nth-child(1),#tbl td:nth-child(2){background:var(--panel)}
+  #tbl th:nth-child(1),#tbl th:nth-child(2){z-index:4}
+  #tbl tbody tr:hover td:nth-child(1),#tbl tbody tr:hover td:nth-child(2){background:#faf8f4}
+  #tbl th:nth-child(2)::after{content:''; position:absolute; top:0; right:0; bottom:0;
+                              width:1px; background:var(--line)}
+  /* Skip layout and paint for rows scrolled out of view. With ~2000 rows this
+     is what keeps a re-sort from blocking for half a second. */
+  tbody tr{content-visibility:auto; contain-intrinsic-size:0 32px}
   tbody tr:hover{background:#faf8f4}
   .up{color:var(--up)} .down{color:var(--down)}
   .tag{font-size:11px; padding:1px 6px; border-radius:3px; background:#eee; color:var(--muted)}
@@ -165,6 +178,8 @@
     <button data-preset="income">存股型（穩定配息 · 高殖利率）</button>
     <button data-preset="cheapstable">便宜穩健（兩者兼顧）</button>
     <button data-preset="highyield">純高殖利率</button>
+    <button data-preset="growth">成長股（營收動能 · 高 ROE）</button>
+    <button data-preset="quality">體質優（高 ROE · 低負債）</button>
     <button data-preset="reset">清除所有條件</button>
   </div>
 </div>
@@ -210,6 +225,12 @@
       <input type="number" id="payoutMax" step="5" placeholder="至多"><span>%</span></div></div>
     <div class="field"><label data-help="eps">EPS 累計（元）</label><div class="pair">
       <input type="number" id="epsMin" step="0.1" placeholder="至少"><span>元</span></div></div>
+    <div class="field"><label data-help="rev_yoy">月營收年增率 %</label><div class="pair">
+      <input type="number" id="yoyMin" step="1" placeholder="至少"><span>%</span></div></div>
+    <div class="field"><label data-help="roe">ROE 累計 %</label><div class="pair">
+      <input type="number" id="roeMin" step="1" placeholder="至少"><span>%</span></div></div>
+    <div class="field"><label data-help="debt_ratio">負債比上限 %</label><div class="pair">
+      <input type="number" id="debtMax" step="5" placeholder="至多"><span>%</span></div></div>
     <div class="field"><label data-help="gross_margin">毛利率 %</label><div class="pair">
       <input type="number" id="gmMin" step="1" placeholder="至少"><span>%</span></div></div>
     <div class="field"><label data-help="close">股價（元）</label><div class="pair">
@@ -225,9 +246,11 @@
     <span>符合條件 <b id="hits">0</b> 檔</span>
     <button type="button" id="sortState"></button>
     <span id="ofTotal"></span>
+    <button type="button" id="showAll" style="display:none"></button>
   </div>
   <div style="display:flex; gap:10px; align-items:center">
     <span id="exportNote"></span>
+    <button type="button" id="copyLink">複製篩選網址</button>
     <button id="exportBtn" class="primary">匯出目前結果（CSV）</button>
   </div>
 </div>
@@ -263,7 +286,17 @@
 
 <script>
 const DATA = /*__DATA__*/null;
-const rows = DATA.rows, meta = DATA.meta;
+const meta = DATA.meta;
+
+/* Rows arrive as plain arrays with a shared field list rather than one object
+   per stock -- repeating ~28 key names across ~2000 rows cost more than the
+   values themselves. Rehydrate once into objects so the rest of the code (and
+   anyone reading it) works with named fields. */
+const rows = DATA.rows.map(values => {
+  const o = {};
+  for (let i = 0; i < DATA.fields.length; i++) o[DATA.fields[i]] = values[i];
+  return o;
+});
 
 const COLS = [
   {k:'code',   t:'代號',    txt:true},
@@ -279,11 +312,16 @@ const COLS = [
   {k:'payout',    t:'配息率%', d:0, warnOver:100},
   {k:'div_streak',t:'連續配息', d:0, suffix:'年'},
   {k:'div_years', t:'配息年數', d:0},
+  {k:'rev_yoy',     t:'月營收YoY%', d:1, signed:true},
+  {k:'rev_cum_yoy', t:'累計營收YoY%', d:1, signed:true},
   {k:'eps_ttm',t:'EPS近四季', d:2},
   {k:'eps',    t:'EPS累計', d:2},
+  {k:'roe',        t:'ROE累計%', d:1},
+  {k:'debt_ratio', t:'負債比%', d:1},
   {k:'gross_margin', t:'毛利率%', d:1},
   {k:'op_margin',    t:'營益率%', d:1},
   {k:'net_margin',   t:'淨利率%', d:1},
+  {k:'book_value',   t:'每股淨值', d:2},
   {k:'volume_lots',  t:'成交量(張)', d:0},
 ];
 
@@ -293,11 +331,14 @@ const PRESETS = {
   cheapstable: {perMin:0, perMax:12, pbrMax:1.2, ydMin:3, streakMin:3, epsMin:0.01,
                 volMin:200, payoutMax:80},
   highyield:   {ydMin:5, epsMin:0.01, volMin:100},
+  growth:      {yoyMin:20, roeMin:10, debtMax:60, epsMin:0.01, volMin:500},
+  quality:     {roeMin:15, debtMax:50, gmMin:20, epsMin:0.01, volMin:300},
   reset:       {}
 };
 
 const NUM_IDS = ['perMin','perMax','pbrMin','pbrMax','ydMin','ydMax','streakMin',
-                 'epsMin','gmMin','pxMin','pxMax','volMin','payoutMax'];
+                 'epsMin','gmMin','pxMin','pxMax','volMin','payoutMax',
+                 'yoyMin','roeMin','debtMax'];
 
 /* Term explanations, shared by the filter labels and the table headers. */
 const TIPS = {
@@ -323,8 +364,10 @@ const TIPS = {
         + '100% 代表把賺到的全部配出去；超過 100%（標紅）代表配的比賺的多，'
         + '差額來自過去累積的保留盈餘，這種配息水準通常無法持續。',
   div_streak: '從最近一年往回數，連續幾年發過現金股利。'
-        + '只涵蓋上市股票——櫃買中心沒有提供多年度資料，所以上櫃顯示「—」，'
-        + '那代表沒有資料，不是沒有配息。',
+        + '上市取自證交所的除權除息計算結果表，可回溯多年。'
+        + '**上櫃沒有任何多年度來源**（櫃買只公布當天，另一份股利資料停更在民國 110 年），'
+        + '所以改為從追蹤起始日起自行累積，未滿一個完整年度前一律顯示「—」——'
+        + '寧可空白，也不要讓幾個月的紀錄看起來像完整的配息紀錄。',
   div_years: '統計區間內總共有幾年發過現金股利，不要求連續。'
         + '若它明顯大於「連續配息」，表示中間曾經斷過。',
   eps_ttm: '最近四季每股盈餘，由「收盤價 ÷ 本益比」反推，不是交易所直接公布的數字。'
@@ -338,17 +381,38 @@ const TIPS = {
         + '比毛利率更接近本業真正的賺錢能力。',
   net_margin: '淨利率＝ 本期淨利 ÷ 營業收入。已包含業外損益與所得稅，'
         + '所以會受一次性的資產處分、匯兌損益影響，不全是本業表現。',
+  rev_yoy: '月營收年增率＝ 本月營收相對去年同月的增減百分比，由交易所計算並公布。'
+        + '這是台股最即時的成長訊號——月營收每月 10 日前公布，比每季才出的財報快得多。'
+        + '但**單月數字容易被基期扭曲**：去年同月基期低，今年就算普通也會出現驚人的增幅。'
+        + '判讀時要搭配右邊的「累計營收YoY」一起看，那個平滑掉了單月波動。',
+  rev_cum_yoy: '今年累計營收相對去年同期的增減百分比。'
+        + '比單月數字穩定，較能反映真實的成長趨勢。滑鼠移到「營收月份」可知統計到哪一個月。',
+  rev_month: '這筆營收資料的所屬月份（民國年/月）。營收每月公布一次，'
+        + '所以這欄通常比股價落後一到兩個月。',
+  roe: 'ROE（Return on Equity，股東權益報酬率）＝ 稅後淨利 ÷ 股東權益。'
+        + '衡量公司運用股東的錢賺錢的效率，是巴菲特最看重的指標之一。'
+        + '**這裡是當年度累計數，沒有年化**：115Q2 代表上半年的報酬率，'
+        + '想比較全年水準要自行斟酌，但景氣循環股直接乘二會嚴重失真，所以刻意不幫你乘。'
+        + '金控、保險、證券業無資料。',
+  debt_ratio: '負債比＝ 負債總計 ÷ 資產總計。公司的資產裡有多少比例是借來的。'
+        + '數字高代表財務槓桿大，景氣好時放大獲利、景氣差時放大風險。'
+        + '不同產業的合理水準差很多：金融、營建天生就高，'
+        + '所以**跨產業比較負債比意義不大**，要跟同業比。金控、保險、證券業無資料。',
+  book_value: '每股淨值＝ 股東權益 ÷ 流通股數，由交易所直接公布。'
+        + '公司清算後理論上每股能拿回的金額。股價除以它就是股價淨值比。',
   volume_lots: '當日成交張數，1 張 ＝ 1000 股。'
         + '成交量太低代表冷門，實際買賣時的價差可能吃掉你算出來的報酬。',
   keepUnknown: '上櫃股票沒有配息歷史資料。勾選＝就算你設了「連續配息年數」條件，'
         + '仍把上櫃留在結果裡；取消＝把它們排除。套用存股型範本時會自動取消。',
 };
 const $ = id => document.getElementById(id);
-// The whole universe is under 2000 rows, so the table can simply show
-// everything. Published as a shared artifact the CSV export is unavailable
-// (declaring a runtime capability blocks public sharing), which would make a
-// truncated table a dead end.
-const ROW_LIMIT = 2500;
+// Row count dominates re-render cost: sorting takes ~160ms at 500 rows, ~610ms
+// at all 1972. Neither content-visibility nor table-layout:fixed moved it much
+// (both measured), because the cost is building ~24 cells per row, not layout.
+// So cap by default and let the reader lift it; the CSV export always covers
+// the complete filtered set.
+const DEFAULT_ROW_LIMIT = 500;
+let rowLimit = DEFAULT_ROW_LIMIT;
 let sortKey = 'yield_pct', sortAsc = false, view = [];
 
 /* ---------- header ---------- */
@@ -530,6 +594,9 @@ function apply(){
     if (!inRange(r.eps, f.epsMin, null)) return false;
     if (!inRange(r.gross_margin, f.gmMin, null)) return false;
     if (!inRange(r.volume_lots, f.volMin, null)) return false;
+    if (!inRange(r.rev_yoy, f.yoyMin, null)) return false;
+    if (!inRange(r.roe, f.roeMin, null)) return false;
+    if (!inRange(r.debt_ratio, null, f.debtMax)) return false;
     if (f.streakMin !== null){
       // Stocks with no history at all (OTC) are kept or dropped by the checkbox.
       if (r.div_streak === null || r.div_streak === undefined) return keepUnknown;
@@ -605,14 +672,17 @@ function render(){
   $('sortState').innerHTML =
     `依 ${col ? col.t : sortKey} ${dirText}<span class="arrow">${sortAsc ? '▲' : '▼'}</span>`;
 
-  const shown = view.slice(0, ROW_LIMIT);
+  const shown = view.slice(0, rowLimit);
   $('body').innerHTML = shown.map(r =>
     '<tr>' + COLS.map(c =>
       `<td class="${c.txt?'txt':''}">${fmt(r[c.k], c)}</td>`).join('') + '</tr>').join('');
   $('empty').style.display = view.length ? 'none' : 'block';
   $('hits').textContent = view.length;
-  $('ofTotal').textContent = view.length > ROW_LIMIT
-    ? `表格只顯示前 ${ROW_LIMIT} 檔，完整 ${view.length} 檔請匯出 CSV` : '';
+  const capped = view.length > rowLimit;
+  $('ofTotal').textContent = capped ? `表格顯示前 ${rowLimit} 檔` : '';
+  $('showAll').style.display = capped ? '' : 'none';
+  $('showAll').textContent = `顯示全部 ${view.length} 檔`;
+  stateToHash();
   distribution();
 }
 
@@ -726,6 +796,63 @@ if (HOSTED) getDownloads().then(api => {
   }
 });
 
+/* ---------- filter state in the URL ----------
+   A screen someone spent time building is worth passing on. Everything the
+   filters hold is mirrored into location.hash, so the address bar always
+   describes the current view and can simply be sent to someone else. */
+let restoring = false;
+
+function stateToHash(){
+  if (restoring) return;
+  const p = new URLSearchParams();
+  if (!$('mTwse').checked) p.set('tw', '0');
+  if (!$('mOtc').checked) p.set('otc', '0');
+  if (!$('keepUnknown').checked) p.set('ku', '0');
+  if (picked.size) p.set('ind', [...picked].join('|'));
+  if ($('indExclude').checked) p.set('ex', '1');
+  if ($('kw').value.trim()) p.set('q', $('kw').value.trim());
+  NUM_IDS.forEach(id => { if ($(id).value !== '') p.set(id, $(id).value); });
+  if (sortKey !== 'yield_pct') p.set('s', sortKey);
+  if (sortAsc) p.set('asc', '1');
+  if (rowLimit !== DEFAULT_ROW_LIMIT) p.set('all', '1');
+  const q = p.toString();
+  history.replaceState(null, '', q ? '#' + q : location.pathname + location.search);
+}
+
+function hashToState(){
+  const raw = location.hash.replace(/^#/, '');
+  if (!raw) return;
+  const p = new URLSearchParams(raw);
+  restoring = true;
+  $('mTwse').checked = p.get('tw') !== '0';
+  $('mOtc').checked = p.get('otc') !== '0';
+  $('keepUnknown').checked = p.get('ku') !== '0';
+  picked.clear();
+  (p.get('ind') || '').split('|').filter(Boolean).forEach(i => picked.add(i));
+  $('indExclude').checked = p.get('ex') === '1';
+  $('kw').value = p.get('q') || '';
+  NUM_IDS.forEach(id => $(id).value = p.get(id) || '');
+  if (p.get('s')) sortKey = p.get('s');
+  sortAsc = p.get('asc') === '1';
+  if (p.get('all') === '1') rowLimit = Infinity;
+  syncInd();
+  restoring = false;
+}
+
+$('copyLink').onclick = async () => {
+  stateToHash();
+  try {
+    await navigator.clipboard.writeText(location.href);
+    note('已複製目前篩選條件的網址。', 'ok');
+  } catch {
+    // Clipboard needs a secure context; opening the file directly has none.
+    note('無法自動複製，請直接從網址列複製。', 'err');
+  }
+};
+
+/* Lifting the cap is sticky: someone who asked for the full list means it. */
+$('showAll').onclick = () => { rowLimit = Infinity; render(); };
+
 /* The chip both reports the current sort and flips its direction. */
 $('sortState').onclick = () => { sortAsc = !sortAsc; render(); };
 $('sortState').dataset.tip =
@@ -746,6 +873,7 @@ NUM_IDS.forEach(id => $(id).addEventListener('input', applySoon));
 ['mTwse','mOtc','keepUnknown'].forEach(id => $(id).addEventListener('change', apply));
 $('kw').addEventListener('input', applySoon);
 syncInd();
+hashToState();   // a shared link decides the opening view
 apply();
 </script>
 </body>
